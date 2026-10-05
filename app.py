@@ -54,7 +54,7 @@ with tab1:
     selected_shop = st.selectbox("가게(점포)를 선택하세요", list(shops.keys()))
     shop_info = shops[selected_shop]
     
-    st.info("전월 기준 수치 - 전기: {:,.1f} kWh / 수도: {:,.1f} ton".format(shop_info['전월전기'], shop_info['전월수도']))
+    st.info("전월 기준 수치 - 전기: " + f"{shop_info['전월전기']:,}" + " kWh / 수도: " + f"{shop_info['전월수도']:,}" + " ton")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -66,7 +66,7 @@ with tab1:
     use_water = curr_water - shop_info["전월수도"]
     
     if use_elec >= 0 and use_water >= 0:
-        st.caption("당월 사용량 - 전기: {:.1f} kWh / 수도: {:.1f} ton".format(use_elec, use_water))
+        st.caption("당월 사용량 - 전기: " + str(round(use_elec, 1)) + " kWh / 수도: " + str(round(use_water, 1)) + " ton")
         
     if st.button("이번 달 관리비 고지서 계산 및 수치 저장"):
         if use_elec < 0 or use_water < 0:
@@ -79,29 +79,4 @@ with tab1:
             
             # 수도세 공식: 사용량*3000 + 공용수도요금 13000
             public_water_fee = 13000
-            indiv_water_fee = (use_water * 3000.0) + public_water_fee
-            
-            # 기타 공용 관리비 항목
-            base_elevator = 70000 / n
-            elevator_fee = base_elevator + 50000 if "점핑" in selected_shop else base_elevator
-            taedong_fee = 370000 / n
-            repair_reserve = 20000
-            daehan_elec_fee = 231000 / n
-            
-            fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
-            total_fee = indiv_elec_fee + indiv_water_fee + fixed_sum
-            
-            db["shops"][selected_shop] = {"전월전기": curr_elec, "전월수도": curr_water}
-            save_data(db)
-            
-            st.markdown("---")
-            st.success("{}님의 {} 총 청구금액: {:,.0f} 원 (수치 저장 완료!)".format(selected_shop, cfg["month"], total_fee))
-            st.info("입금계좌: " + cfg["account"])
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("### 전기 및 수도 요금")
-                st.write("- **전기세**: {:,.0f}원".format(indiv_elec_fee))
-                st.caption("  (사용량 {:.1f}kWh × 140원 + 공용전기 75,000원 + 기본전기 {:,.0f}원)".format(use_elec, base_elec_share))
-                
-                st.write("- **수도세**: {:,.0f}원".format(
+            indiv
