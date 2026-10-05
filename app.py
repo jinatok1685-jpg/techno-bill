@@ -58,18 +58,23 @@ with tab1:
     
     col1, col2 = st.columns(2)
     with col1:
-        curr_elec = st.number_input("당월 전기 계량기 수치", value=float(shop_info["전월전기"]), key="c_elec")
+        curr_elec = st.number_input("당월 전기 계량기 수치", value=0.0, step=1.0, format="%.1f", key="c_elec")
     with col2:
-        curr_water = st.number_input("당월 수도 계량기 수치", value=float(shop_info["전월수도"]), key="c_water")
+        curr_water = st.number_input("당월 수도 계량기 수치", value=0.0, step=1.0, format="%.1f", key="c_water")
         
     use_elec = curr_elec - shop_info["전월전기"]
     use_water = curr_water - shop_info["전월수도"]
     
-    if use_elec >= 0 and use_water >= 0:
-        st.caption(f"당월 사용량 - 전기: {round(use_elec, 1)} kWh / 수도: {round(use_water, 1)} ton")
+    if curr_elec > 0 or curr_water > 0:
+        if use_elec >= 0 and use_water >= 0:
+            st.caption(f"당월 사용량 - 전기: {round(use_elec, 1)} kWh / 수도: {round(use_water, 1)} ton")
+        else:
+            st.warning("⚠️ 당월 계량기 수치가 전월 기준 수치보다 작습니다. 수치를 확인해주세요.")
         
     if st.button("이번 달 관리비 고지서 계산 및 수치 저장", key="calc_btn"):
-        if use_elec < 0 or use_water < 0:
+        if curr_elec == 0.0 and curr_water == 0.0:
+            st.error("당월 계량기 수치를 입력해주세요.")
+        elif use_elec < 0 or use_water < 0:
             st.error("당월 수치가 전월 수치보다 작습니다. 계량기 수치를 확인해주세요.")
         else:
             base_elec_share = 750000 / n
