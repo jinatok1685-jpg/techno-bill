@@ -27,9 +27,11 @@ DEFAULT_CONFIG = {
 }
 
 def load_data():
+    # 파일이 있을 때는 지우지 않고 기존 저장된 값을 정상적으로 불러옵니다!
     if os.path.exists(DATA_FILE):
         try:
-            os.remove(DATA_FILE)
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
         except Exception:
             pass
     return {"shops": DEFAULT_SHOPS, "config": DEFAULT_CONFIG}
@@ -165,11 +167,4 @@ with tab2:
                     pe = st.number_input(shop_name + " 기준 전기(kWh)", value=float(vals["전월전기"]), key=f"pe_{shop_name}")
                 with sc2:
                     pw = st.number_input(shop_name + " 기준 수도(ton)", value=float(vals["전월수도"]), key=f"pw_{shop_name}")
-                updated_shops[shop_name] = {"전월전기": pe, "전월수도": pw}
-            
-            submit_shops = st.form_submit_button("수치 수동 업데이트 저장")
-            if submit_shops:
-                db["shops"] = updated_shops
-                save_data(db)
-                st.success("점포 기준 수치가 개별 업데이트되었습니다!")
-                st.rerun()
+                updated_shops[shop_name] = {"전월전기": pe, "전월수도
