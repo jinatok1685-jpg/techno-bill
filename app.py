@@ -49,12 +49,12 @@ with tab1:
     shops = db["shops"]
     n = cfg["n_shops"] if cfg["n_shops"] > 0 else 1
 
-    st.subheader(cfg["month"] + " 관리비 조회")
+    st.subheader(f"{cfg['month']} 관리비 조회")
     
     selected_shop = st.selectbox("가게(점포)를 선택하세요", list(shops.keys()), key="select_shop_main")
     shop_info = shops[selected_shop]
     
-    st.info("전월 기준 수치 - 전기: " + f"{shop_info['전월전기']:,}" + " kWh / 수도: " + f"{shop_info['전월수도']:,}" + " ton")
+    st.info(f"전월 기준 수치 - 전기: {shop_info['전월전기']:,} kWh / 수도: {shop_info['전월수도']:,} ton")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -66,22 +66,19 @@ with tab1:
     use_water = curr_water - shop_info["전월수도"]
     
     if use_elec >= 0 and use_water >= 0:
-        st.caption("당월 사용량 - 전기: " + str(round(use_elec, 1)) + " kWh / 수도: " + str(round(use_water, 1)) + " ton")
+        st.caption(f"당월 사용량 - 전기: {round(use_elec, 1)} kWh / 수도: {round(use_water, 1)} ton")
         
     if st.button("이번 달 관리비 고지서 계산 및 수치 저장", key="calc_btn"):
         if use_elec < 0 or use_water < 0:
             st.error("당월 수치가 전월 수치보다 작습니다. 계량기 수치를 확인해주세요.")
         else:
-            # 전기세 공식: 사용량*140 + 공용전기요금 75000 + 기본전기요금 750000/n
             base_elec_share = 750000 / n
             public_elec_fee = 75000
             indiv_elec_fee = (use_elec * 140.0) + public_elec_fee + base_elec_share
             
-            # 수도세 공식: 사용량*3000 + 공용수도요금 13000
             public_water_fee = 13000
             indiv_water_fee = (use_water * 3000.0) + public_water_fee
             
-            # 기타 공용 관리비 항목
             base_elevator = 70000 / n
             elevator_fee = base_elevator + 50000 if "점핑" in selected_shop else base_elevator
             taedong_fee = 370000 / n
@@ -95,17 +92,60 @@ with tab1:
             save_data(db)
             
             st.markdown("---")
-            st.success(selected_shop + "님의 " + cfg["month"] + " 총 청구금액: " + f"{total_fee:,.0f}" + " 원 (수치 저장 완료!)")
-            st.info("입금계좌: " + cfg["account"])
+            st.success(f"{selected_shop}님의 {cfg['month']} 총 청구금액: {total_fee:,.0f} 원 (수치 저장 완료!)")
+            st.info(f"입금계좌: {cfg['account']}")
             
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown("### 전기 및 수도 요금")
-                st.write("- **전기세**: " + f"{indiv_elec_fee:,.0f}" + "원")
-                st.caption("  (사용량 " + str(round(use_elec, 1)) + "kWh × 140원 + 공용전기 75,000원 + 기본전기 " + f"{base_elec_share:,.0f}" + "원)")
+                st.write(f"- **전기세**: {indiv_elec_fee:,.0f}원")
+                st.caption(f"  (사용량 {round(use_elec, 1)}kWh × 140원 + 공용전기 75,000원 + 기본전기 {base_elec_share:,.0f}원)")
                 
-                st.write("- **수도세**: " + f"{indiv_water_fee:,.0f}" + "원")
-                st.caption("  (사용량 " + str(round(use_water, 1)) + "톤 × 3,000원 + 공용수도 13,000원)")
+                st.write(f"- **수도세**: {indiv_water_fee:,.0f}원")
+                st.caption(f"  (사용량 {round(use_water, 1)}톤 × 3,000원 + 공용수도 13,000원)")
             
             with c2:
-                st.
+                st.markdown("### 기타 공용 관리비 분담 항목")
+                jump_text = " (점핑 +50,000원 포함)" if "점핑" in selected_shop else ""
+                st.write(f"- 엘리베이터 요금: {elevator_fee:,.0f}원{jump_text}")
+                st.write(f"- 태동환경: {taedong_fee:,.0f}원")
+                st.write(f"- 수선예비비: {repair_reserve:,.0f}원")
+                st.write(f"- 대한전기: {daehan_elec_fee:,.0f}원")
+
+with tab2:
+    st.subheader("관리자 설정")
+    
+    st.markdown("### 1. 기본 설정 (정산 월 및 계좌)")
+    m = st.text_input("정산 월", value=cfg["month"], key="cfg_month_input")
+    n_s = st.number_input("점포 수 (n)", value=int(cfg["n_shops"]), min_value=1, key="cfg_n_input")
+    acc = st.text_input("입금 계좌 안내", value=cfg["account"], key="cfg_acc_input")
+        
+    if st.button("기본 설정 저장하기", key="save_cfg_btn"):
+        db["config"] = {
+            "month": m,
+            "n_shops": int(n_s),
+            "account": acc
+        }
+        save_data(db)
+        st.success("기본 설정이 저장되었습니다!")
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown("### 2. 점포별 기준 수치 수동 수정/이월 점검")
+    
+    updated_shops = {}
+    for shop_name, vals in shops.items():
+        st.markdown(f"**{shop_name}**")
+        sc1, sc2 = st.columns(2)
+        with sc1:
+            pe = st.number_input("기준 전기(kWh)", value=float(vals["전월전기"]), key=f"pe_{shop_name}")
+        with sc2:
+            pw = st.number_input("기준 수도(ton)", value=float(vals["전월수도"]), key=f"pw_{shop_name}")
+        updated_shops[shop_name] = {"전월전기": pe, "전월수도": pw}
+        st.write("")
+    
+    if st.button("수치 수동 업데이트 저장", key="save_shops_btn"):
+        db["shops"] = updated_shops
+        save_data(db)
+        st.success("점포 기준 수치가 개별 업데이트되었습니다!")
+        st.rerun()
