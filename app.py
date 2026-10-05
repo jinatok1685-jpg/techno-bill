@@ -1,8 +1,11 @@
 import streamlit as st
+import json
+import os
 
 st.set_page_config(page_title="테크노푸드몰 관리비 고지서", page_icon="🏢", layout="wide")
 
-# 최초 초기화용 점포 기본 데이터 (전월 수치 포함)
+DATA_FILE = "data.json"
+
 DEFAULT_SHOPS = {
     "지하105-3호 바른푸드(쌀국수)": {"전월전기": 121525.5, "전월수도": 1530.0},
     "A동102호 두찜": {"전월전기": 63543.9, "전월수도": 1367.0},
@@ -12,7 +15,6 @@ DEFAULT_SHOPS = {
     "B동108호 부릉": {"전월전기": 28438.6, "전월수도": 2.0}
 }
 
-# 기본 관리자 설정
 DEFAULT_CONFIG = {
     "month": "10월",
     "n_shops": 6,
@@ -24,13 +26,26 @@ DEFAULT_CONFIG = {
     "account": "카카오뱅크 7942-07-89864 (예금주: 하기수)"
 }
 
-if "shops" not in st.session_state:
-    st.session_state.shops = DEFAULT_SHOPS
-if "config" not in st.session_state:
-    st.session_state.config = DEFAULT_CONFIG
+def load_data():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"shops": DEFAULT_SHOPS, "config": DEFAULT_CONFIG}
+
+def save_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+if "db" not in st.session_state:
+    st.session_state.db = load_data()
+
+db = st.session_state.db
 
 st.title("🏢 테크노푸드몰 관리비 고지서")
-st.caption("당월 계량기 수치를 입력하시면 상세 항목별 관리비가 자동 계산됩니다.")
+st.caption("당월 계량기 수치를 입력하시면 상가 규정에 따른 관리비가 자동 계산 및 보장 저장됩니다.")
 
 tab1, tab2 = st.tabs(["📲 [점주용] 관리비 조회", "⚙️ [관리자] 단가 및 공용비 설정"])
 
@@ -38,8 +53,8 @@ tab1, tab2 = st.tabs(["📲 [점주용] 관리비 조회", "⚙️ [관리자] �
 # TAB 1: [점주용] 관리비 조회
 # ---------------------------------------------------------
 with tab1:
-    cfg = st.session_state.config
-    shops = st.session_state.shops
+    cfg = db["config"]
+    shops = db["shops"]
     n = cfg["n_shops"] if cfg["n_shops"] > 0 else 1
 
     st.subheader(f"📌 {cfg['month']} 관리비 조회")
@@ -47,7 +62,7 @@ with tab1:
     selected_shop = st.selectbox("가게(점포)를 선택하세요", list(shops.keys()))
     shop_info = shops[selected_shop]
     
-    st.info(f"💡 [전월 수치] 전기: {shop_info['전월전기']:,} kWh | 수도: {shop_info['전월수도']:,} ton")
+    st.info(f"💡 [전월 기준 수치] 전기: {shop_info['전월전기']:,} kWh | 수도: {shop_info['전월수도']:,} ton")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -61,30 +76,33 @@ with tab1:
     if use_elec >= 0 and use_water >= 0:
         st.caption(f"✨ 당월 사용량: 전기 {use_elec:.1f} kWh / 수도 {use_water:.1f} ton")
         
-    if st.button("📄 이번 달 관리비 고지서 계산하기"):
+    if st.button("📄 이번 달 관리비 고지서 계산 및 수치 저장"):
         if use_elec < 0 or use_water < 0:
             st.error("당월 수치가 전월 수치보다 작습니다. 계량기 수치를 확인해주세요.")
         else:
-            # 수도 단가 산출
+            # 수도 단가
             water_unit = cfg["total_water_fee"] / cfg["total_water_ton"] if cfg["total_water_ton"] > 0 else 0
             
             # 개별 사용료
             indiv_elec_fee = use_elec * cfg["elec_unit"]
             indiv_water_fee = use_water * water_unit
             
-            # 고정 나눔 항목 계산
+            # 고정 항목 (엘리베이터: 점핑 +50000원)
             base_elevator = 70000 / n
             elevator_fee = base_elevator + 50000 if "점핑" in selected_shop else base_elevator
             taedong_fee = 370000 / n
             repair_reserve = 20000
             daehan_elec_fee = 231000 / n
             
-            # 총 청구액 (개별사용료 + 건물공용분담금)
             fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
             total_fee = indiv_elec_fee + indiv_water_fee + fixed_sum
             
+            # 입력된 당월 수치를 저장하여 차기 전월 수치로 자동 반영 준비
+            db["shops"][selected_shop] = {"전월전기": curr_elec, "전월수도": curr_water}
+            save_data(db)
+            
             st.markdown("---")
-            st.success(f"🧾 **{selected_shop}**님의 {cfg['month']} 총 청구금액: **{total_fee:,.0f} 원**")
+            st.success(f"🧾 **{selected_shop}**님의 {cfg['month']} 총 청구금액: **{total_fee:,.0f} 원** (입력 수치 저장 완료!)")
             st.info(f"🏦 입금계좌: {cfg['account']}")
             
             c1, c2 = st.columns(2)
@@ -126,7 +144,7 @@ with tab2:
                 
             submit_config = st.form_submit_button("기본 설정 저장하기")
             if submit_config:
-                st.session_state.config.update({
+                db["config"].update({
                     "month": m,
                     "n_shops": n_s,
                     "total_elec_kwh": tot_e_kwh,
@@ -136,11 +154,12 @@ with tab2:
                     "elec_unit": e_unit,
                     "account": acc
                 })
-                st.success("기본 설정이 성공적으로 저장되었습니다!")
+                save_data(db)
+                st.success("기본 설정이 저장되었습니다!")
                 st.rerun()
 
         st.markdown("---")
-        st.markdown("### 2️⃣ 점포별 전월 수치 초기 설정 (최초 1회 설정)")
+        st.markdown("### 2️⃣ 점포별 수치 수동 수정/이월 점검")
         
         with st.form("shops_prev_form"):
             updated_shops = {}
@@ -148,13 +167,14 @@ with tab2:
                 st.write(f"**[{shop_name}]**")
                 sc1, sc2 = st.columns(2)
                 with sc1:
-                    pe = st.number_input(f"{shop_name} 전월 전기(kWh)", value=float(vals["전월전기"]), key=f"pe_{shop_name}")
+                    pe = st.number_input(f"{shop_name} 기준 전기(kWh)", value=float(vals["전월전기"]), key=f"pe_{shop_name}")
                 with sc2:
-                    pw = st.number_input(f"{shop_name} 전월 수도(ton)", value=float(vals["전월수도"]), key=f"pw_{shop_name}")
+                    pw = st.number_input(f"{shop_name} 기준 수도(ton)", value=float(vals["전월수도"]), key=f"pw_{shop_name}")
                 updated_shops[shop_name] = {"전월전기": pe, "전월수도": pw}
             
-            submit_shops = st.form_submit_button("점포 전월 수치 저장하기")
+            submit_shops = st.form_submit_button("수치 수동 업데이트 저장")
             if submit_shops:
-                st.session_state.shops = updated_shops
-                st.success("점포별 전월 수치가 저장되었습니다!")
+                db["shops"] = updated_shops
+                save_data(db)
+                st.success("점포 수치가 개별 업데이트되었습니다!")
                 st.rerun()
