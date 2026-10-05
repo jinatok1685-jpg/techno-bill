@@ -6,6 +6,7 @@ st.set_page_config(page_title="테크노푸드몰 관리비 고지서", page_ico
 
 DATA_FILE = "data.json"
 
+# 9월 엑셀의 [당월검침] 수치들을 10월의 기준(전월) 수치로 정확히 반영
 DEFAULT_SHOPS = {
     "지하105-3호 바른푸드(쌀국수)": {"전월전기": 123243.4, "전월수도": 1549.0},
     "A동102호 두찜": {"전월전기": 65010.4, "전월수도": 1391.0},
@@ -85,6 +86,7 @@ with tab1:
             indiv_elec_fee = use_elec * cfg["elec_unit"]
             indiv_water_fee = use_water * water_unit
             
+            # 고정 공용비 적용 (공용전기 각 75,000원 / 공용수도 각 13,000원)
             public_elec_fee = 75000
             public_water_fee = 13000
             
