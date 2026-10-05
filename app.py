@@ -56,17 +56,17 @@ with tab1:
     
     st.markdown("---")
     
-    # 1. 전기 영역 (전월 아래 당월 배치)
+    # 1. 전기 영역 (가게별 독립 키 부여로 기본값 0 유지)
     st.markdown("### ⚡ 전기 계량기")
     st.info(f"전월 기준 전기 수치: **{shop_info['전월전기']:,} kWh**")
-    curr_elec = st.number_input("당월 전기 계량기 수치 입력", value=0.0, step=1.0, format="%.1f", key="c_elec")
+    curr_elec = st.number_input("당월 전기 계량기 수치 입력", value=0.0, step=1.0, format="%.1f", key=f"c_elec_{selected_shop}")
     
     st.markdown("")
     
-    # 2. 수도 영역 (전월 아래 당월 배치)
+    # 2. 수도 영역 (가게별 독립 키 부여로 기본값 0 유지)
     st.markdown("### 💧 수도 계량기")
     st.info(f"전월 기준 수도 수치: **{shop_info['전월수도']:,} ton**")
-    curr_water = st.number_input("당월 수도 계량기 수치 입력", value=0.0, step=1.0, format="%.1f", key="c_water")
+    curr_water = st.number_input("당월 수도 계량기 수치 입력", value=0.0, step=1.0, format="%.1f", key=f"c_water_{selected_shop}")
         
     use_elec = curr_elec - shop_info["전월전기"]
     use_water = curr_water - shop_info["전월수도"]
@@ -79,7 +79,7 @@ with tab1:
         else:
             st.warning("⚠️ 당월 계량기 수치가 전월 기준 수치보다 작습니다. 수치를 확인해주세요.")
         
-    if st.button("이번 달 관리비 고지서 계산하기", key="calc_btn"):
+    if st.button("이번 달 관리비 고지서 계산하기", key=f"calc_btn_{selected_shop}"):
         if curr_elec == 0.0 and curr_water == 0.0:
             st.error("당월 계량기 수치를 입력해주세요.")
         elif use_elec < 0 or use_water < 0:
