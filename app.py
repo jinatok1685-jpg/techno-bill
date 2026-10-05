@@ -140,5 +140,38 @@ with tab2:
                 
             submit_config = st.form_submit_button("기본 설정 저장하기")
             if submit_config:
-                db["config"].update({
+                new_config = {
                     "month": m,
+                    "n_shops": n_s,
+                    "total_elec_kwh": tot_e_kwh,
+                    "total_elec_fee": tot_e_fee,
+                    "total_water_ton": tot_w_ton,
+                    "total_water_fee": tot_w_fee,
+                    "elec_unit": e_unit,
+                    "account": acc
+                }
+                db["config"] = new_config
+                save_data(db)
+                st.success("기본 설정이 저장되었습니다!")
+                st.rerun()
+
+        st.markdown("---")
+        st.markdown("### 2. 점포별 기준 수치 수동 수정/이월 점검")
+        
+        with st.form("shops_prev_form"):
+            updated_shops = {}
+            for shop_name, vals in shops.items():
+                st.write("[" + shop_name + "]")
+                sc1, sc2 = st.columns(2)
+                with sc1:
+                    pe = st.number_input(shop_name + " 기준 전기(kWh)", value=float(vals["전월전기"]), key="pe_" + shop_name)
+                with sc2:
+                    pw = st.number_input(shop_name + " 기준 수도(ton)", value=float(vals["전월수도"]), key="pw_" + shop_name)
+                updated_shops[shop_name] = {"전월전기": pe, "전월수도": pw}
+            
+            submit_shops = st.form_submit_button("수치 수동 업데이트 저장")
+            if submit_shops:
+                db["shops"] = updated_shops
+                save_data(db)
+                st.success("점포 기준 수치가 개별 업데이트되었습니다!")
+                st.rerun()
