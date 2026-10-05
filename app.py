@@ -6,7 +6,7 @@ st.set_page_config(page_title="테크노푸드몰 관리비 고지서", page_ico
 
 DATA_FILE = "data.json"
 
-# 9월 엑셀 파일의 당월 검침 수치를 10월의 전월(기준) 수치로 세팅
+# 9월 엑셀 파일의 정확한 당월 검침 수치를 10월의 전월(기준) 수치로 완벽 세팅
 DEFAULT_SHOPS = {
     "지하105-3호 바른푸드(쌀국수)": {"전월전기": 123243.4, "전월수도": 1549.0},
     "A동102호 두찜": {"전월전기": 65010.4, "전월수도": 1391.0},
@@ -23,7 +23,7 @@ DEFAULT_CONFIG = {
     "total_elec_fee": 0,
     "total_water_ton": 0.0,
     "total_water_fee": 11784000,
-    "elec_unit": 135.0, # 9월 파일 기준 단가 반영
+    "elec_unit": 135.0,
     "account": "카카오뱅크 7942-07-89864 (예금주: 하기수)"
 }
 
@@ -81,7 +81,7 @@ with tab1:
         if use_elec < 0 or use_water < 0:
             st.error("당월 수치가 전월 수치보다 작습니다. 계량기 수치를 확인해주세요.")
         else:
-            # 수도 단가 (총수도요금 / 총수도사용량, 0으로 나누기 방지)
+            # 수도 단가
             water_unit = cfg["total_water_fee"] / cfg["total_water_ton"] if cfg["total_water_ton"] > 0 else 0
             
             # 개별 사용료
@@ -176,11 +176,4 @@ with tab2:
                     pe = st.number_input(f"{shop_name} 기준 전기(kWh)", value=float(vals["전월전기"]), key=f"pe_{shop_name}")
                 with sc2:
                     pw = st.number_input(f"{shop_name} 기준 수도(ton)", value=float(vals["전월수도"]), key=f"pw_{shop_name}")
-                updated_shops[shop_name] = {"전월전기": pe, "전월수도": pw}
-            
-            submit_shops = st.form_submit_button("수치 수동 업데이트 저장")
-            if submit_shops:
-                db["shops"] = updated_shops
-                save_data(db)
-                st.success("점포 기준 수치가 개별 업데이트되었습니다!")
-                st.rerun()
+                updated_shops[shop_name] = {"전월전기": pe
