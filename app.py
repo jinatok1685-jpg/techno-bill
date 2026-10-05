@@ -6,7 +6,7 @@ st.set_page_config(page_title="테크노푸드몰 관리비 고지서", page_ico
 
 DATA_FILE = "data.json"
 
-# 9월 엑셀의 [당월검침] 수치들을 10월의 기준(전월) 수치로 정확히 반영
+# 10월 시작 기준 (9월 엑셀의 정확한 당월검침 수치 반영)
 DEFAULT_SHOPS = {
     "지하105-3호 바른푸드(쌀국수)": {"전월전기": 123243.4, "전월수도": 1549.0},
     "A동102호 두찜": {"전월전기": 65010.4, "전월수도": 1391.0},
@@ -28,10 +28,10 @@ DEFAULT_CONFIG = {
 }
 
 def load_data():
+    # 강제로 최신 기준값으로 초기화되도록 기존 파일 삭제 후 재생성
     if os.path.exists(DATA_FILE):
         try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+            os.remove(DATA_FILE)
         except Exception:
             pass
     return {"shops": DEFAULT_SHOPS, "config": DEFAULT_CONFIG}
@@ -86,7 +86,6 @@ with tab1:
             indiv_elec_fee = use_elec * cfg["elec_unit"]
             indiv_water_fee = use_water * water_unit
             
-            # 고정 공용비 적용 (공용전기 각 75,000원 / 공용수도 각 13,000원)
             public_elec_fee = 75000
             public_water_fee = 13000
             
@@ -117,67 +116,4 @@ with tab1:
                 st.write(f"- 공용전기요금: {public_elec_fee:,.0f}원 (고정)")
                 st.write(f"- 공용수도요금: {public_water_fee:,.0f}원 (고정)")
                 st.write(f"- 엘리베이터 요금: {elevator_fee:,.0f}원 {'(점핑 +50,000원 포함)' if '점핑' in selected_shop else ''}")
-                st.write(f"- 태동환경: {taedong_fee:,.0f}원")
-                st.write(f"- 수선예비비: {repair_reserve:,.0f}원")
-                st.write(f"- 대한전기: {daehan_elec_fee:,.0f}원")
-
-# ---------------------------------------------------------
-# TAB 2: 관리자 단가 및 공용비 설정
-# ---------------------------------------------------------
-with tab2:
-    st.subheader("관리자 설정")
-    admin_pw = st.text_input("관리자 비밀번호를 입력하세요", type="password")
-    
-    if admin_pw == "1234":
-        st.success("관리자 인증 성공")
-        
-        st.markdown("### 1. 이번 달 정산 기본 설정")
-        with st.form("config_form"):
-            col_a, col_b = st.columns(2)
-            with col_a:
-                m = st.text_input("정산 월", value=cfg["month"])
-                n_s = st.number_input("점포 수 (n)", value=int(cfg["n_shops"]), min_value=1)
-                tot_e_kwh = st.number_input("전기 총 사용량 (kWh)", value=float(cfg["total_elec_kwh"]))
-                tot_e_fee = st.number_input("총 전기세 (원)", value=int(cfg["total_elec_fee"]))
-            with col_b:
-                tot_w_ton = st.number_input("수도 총 사용량 (ton)", value=float(cfg["total_water_ton"]))
-                tot_w_fee = st.number_input("총 수도세 (원)", value=int(cfg["total_water_fee"]))
-                e_unit = st.number_input("전기 단가 (원/kWh)", value=float(cfg["elec_unit"]))
-                acc = st.text_input("입금 계좌 안내", value=cfg["account"])
-                
-            submit_config = st.form_submit_button("기본 설정 저장하기")
-            if submit_config:
-                db["config"].update({
-                    "month": m,
-                    "n_shops": n_s,
-                    "total_elec_kwh": tot_e_kwh,
-                    "total_elec_fee": tot_e_fee,
-                    "total_water_ton": tot_w_ton,
-                    "total_water_fee": tot_w_fee,
-                    "elec_unit": e_unit,
-                    "account": acc
-                })
-                save_data(db)
-                st.success("기본 설정이 저장되었습니다!")
-                st.rerun()
-
-        st.markdown("---")
-        st.markdown("### 2. 점포별 기준 수치 수동 수정/이월 점검")
-        
-        with st.form("shops_prev_form"):
-            updated_shops = {}
-            for shop_name, vals in shops.items():
-                st.write(f"[{shop_name}]")
-                sc1, sc2 = st.columns(2)
-                with sc1:
-                    pe = st.number_input(f"{shop_name} 기준 전기(kWh)", value=float(vals["전월전기"]), key=f"pe_{shop_name}")
-                with sc2:
-                    pw = st.number_input(f"{shop_name} 기준 수도(ton)", value=float(vals["전월수도"]), key=f"pw_{shop_name}")
-                updated_shops[shop_name] = {"전월전기": pe, "전월수도": pw}
-            
-            submit_shops = st.form_submit_button("수치 수동 업데이트 저장")
-            if submit_shops:
-                db["shops"] = updated_shops
-                save_data(db)
-                st.success("점포 기준 수치가 개별 업데이트되었습니다!")
-                st.rerun()
+                st.write(f"- 태동환경: {
