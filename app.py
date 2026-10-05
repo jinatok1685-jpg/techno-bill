@@ -58,9 +58,9 @@ with tab1:
     
     col1, col2 = st.columns(2)
     with col1:
-        curr_elec = st.number_input("당월 전기 계량기 수치", value=float(shop_info["전월전기"]))
+        curr_elec = st.number_input("당월 전기 계량기 수치", value=float(shop_info["전월전기"]), key="c_elec")
     with col2:
-        curr_water = st.number_input("당월 수도 계량기 수치", value=float(shop_info["전월수도"]))
+        curr_water = st.number_input("당월 수도 계량기 수치", value=float(shop_info["전월수도"]), key="c_water")
         
     use_elec = curr_elec - shop_info["전월전기"]
     use_water = curr_water - shop_info["전월수도"]
@@ -79,4 +79,17 @@ with tab1:
             
             # 수도세 공식: 사용량*3000 + 공용수도요금 13000
             public_water_fee = 13000
-            indiv
+            indiv_water_fee = (use_water * 3000.0) + public_water_fee
+            
+            # 기타 공용 관리비 항목
+            base_elevator = 70000 / n
+            elevator_fee = base_elevator + 50000 if "점핑" in selected_shop else base_elevator
+            taedong_fee = 370000 / n
+            repair_reserve = 20000
+            daehan_elec_fee = 231000 / n
+            
+            fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
+            total_fee = indiv_elec_fee + indiv_water_fee + fixed_sum
+            
+            db["shops"][selected_shop] = {"전월전기": curr_elec, "전월수도": curr_water}
+            save_data(db)
