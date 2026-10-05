@@ -51,7 +51,7 @@ with tab1:
 
     st.subheader(cfg["month"] + " 관리비 조회")
     
-    selected_shop = st.selectbox("가게(점포)를 선택하세요", list(shops.keys()))
+    selected_shop = st.selectbox("가게(점포)를 선택하세요", list(shops.keys()), key="select_shop_main")
     shop_info = shops[selected_shop]
     
     st.info("전월 기준 수치 - 전기: " + f"{shop_info['전월전기']:,}" + " kWh / 수도: " + f"{shop_info['전월수도']:,}" + " ton")
@@ -68,7 +68,7 @@ with tab1:
     if use_elec >= 0 and use_water >= 0:
         st.caption("당월 사용량 - 전기: " + str(round(use_elec, 1)) + " kWh / 수도: " + str(round(use_water, 1)) + " ton")
         
-    if st.button("이번 달 관리비 고지서 계산 및 수치 저장"):
+    if st.button("이번 달 관리비 고지서 계산 및 수치 저장", key="calc_btn"):
         if use_elec < 0 or use_water < 0:
             st.error("당월 수치가 전월 수치보다 작습니다. 계량기 수치를 확인해주세요.")
         else:
@@ -93,3 +93,32 @@ with tab1:
             
             db["shops"][selected_shop] = {"전월전기": curr_elec, "전월수도": curr_water}
             save_data(db)
+            
+            st.markdown("---")
+            st.success(selected_shop + "님의 " + cfg["month"] + " 총 청구금액: " + f"{total_fee:,.0f}" + " 원 (수치 저장 완료!)")
+            st.info("입금계좌: " + cfg["account"])
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("### 전기 및 수도 요금")
+                st.write("- **전기세**: " + f"{indiv_elec_fee:,.0f}" + "원")
+                st.caption("  (사용량 " + str(round(use_elec, 1)) + "kWh × 140원 + 공용전기 75,000원 + 기본전기 " + f"{base_elec_share:,.0f}" + "원)")
+                
+                st.write("- **수도세**: " + f"{indiv_water_fee:,.0f}" + "원")
+                st.caption("  (사용량 " + str(round(use_water, 1)) + "톤 × 3,000원 + 공용수도 13,000원)")
+            
+            with c2:
+                st.markdown("### 기타 공용 관리비 분담 항목")
+                jump_text = " (점핑 +50,000원 포함)" if "점핑" in selected_shop else ""
+                st.write("- 엘리베이터 요금: " + f"{elevator_fee:,.0f}" + "원" + jump_text)
+                st.write("- 태동환경: " + f"{taedong_fee:,.0f}" + "원")
+                st.write("- 수선예비비: " + f"{repair_reserve:,.0f}" + "원")
+                st.write("- 대한전기: " + f"{daehan_elec_fee:,.0f}" + "원")
+
+with tab2:
+    st.subheader("관리자 설정")
+    
+    st.markdown("### 1. 기본 설정 (정산 월 및 계좌)")
+    m = st.text_input("정산 월", value=cfg["month"], key="cfg_month_input")
+    n_s = st.number_input("점포 수 (n)", value=int(cfg["n_shops"]), min_value=1, key="cfg_n_input")
+    acc = st.text
