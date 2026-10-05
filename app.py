@@ -56,14 +56,14 @@ with tab1:
     
     st.markdown("---")
     
-    # 1. 전기 영역 (가게별 독립 키 부여로 기본값 0 유지)
+    # 1. 전기 영역
     st.markdown("### ⚡ 전기 계량기")
     st.info(f"전월 기준 전기 수치: **{shop_info['전월전기']:,} kWh**")
     curr_elec = st.number_input("당월 전기 계량기 수치 입력", value=0.0, step=1.0, format="%.1f", key=f"c_elec_{selected_shop}")
     
     st.markdown("")
     
-    # 2. 수도 영역 (가게별 독립 키 부여로 기본값 0 유지)
+    # 2. 수도 영역
     st.markdown("### 💧 수도 계량기")
     st.info(f"전월 기준 수도 수치: **{shop_info['전월수도']:,} ton**")
     curr_water = st.number_input("당월 수도 계량기 수치 입력", value=0.0, step=1.0, format="%.1f", key=f"c_water_{selected_shop}")
@@ -95,7 +95,7 @@ with tab1:
             base_elevator = 70000 / n
             elevator_fee = base_elevator + 50000 if "점핑" in selected_shop else base_elevator
             taedong_fee = 370000 / n
-            repair_reserve = 20000
+            repair_reserve = 10000  # 2만원에서 1만원으로 변경 반영
             daehan_elec_fee = 231000 / n
             
             fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
