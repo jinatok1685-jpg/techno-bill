@@ -108,17 +108,4 @@ with tab1:
                 st.caption("  (사용량 " + str(round(use_water, 1)) + "톤 × 3,000원 + 공용수도 13,000원)")
             
             with c2:
-                st.markdown("### 기타 공용 관리비 분담 항목")
-                jump_text = " (점핑 +50,000원 포함)" if "점핑" in selected_shop else ""
-                st.write("- 엘리베이터 요금: " + f"{elevator_fee:,.0f}" + "원" + jump_text)
-                st.write("- 태동환경: " + f"{taedong_fee:,.0f}" + "원")
-                st.write("- 수선예비비: " + f"{repair_reserve:,.0f}" + "원")
-                st.write("- 대한전기: " + f"{daehan_elec_fee:,.0f}" + "원")
-
-with tab2:
-    st.subheader("관리자 설정")
-    
-    st.markdown("### 1. 기본 설정 (정산 월 및 계좌)")
-    m = st.text_input("정산 월", value=cfg["month"], key="cfg_month_input")
-    n_s = st.number_input("점포 수 (n)", value=int(cfg["n_shops"]), min_value=1, key="cfg_n_input")
-    acc = st.text
+                st.
