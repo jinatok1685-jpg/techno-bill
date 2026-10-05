@@ -54,24 +54,32 @@ with tab1:
     selected_shop = st.selectbox("가게(점포)를 선택하세요", list(shops.keys()), key="select_shop_main")
     shop_info = shops[selected_shop]
     
-    st.info(f"전월 기준 수치 - 전기: {shop_info['전월전기']:,} kWh / 수도: {shop_info['전월수도']:,} ton")
+    st.markdown("---")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        curr_elec = st.number_input("당월 전기 계량기 수치", value=0.0, step=1.0, format="%.1f", key="c_elec")
-    with col2:
-        curr_water = st.number_input("당월 수도 계량기 수치", value=0.0, step=1.0, format="%.1f", key="c_water")
+    # 1. 전기 영역 (전월 아래 당월 배치)
+    st.markdown("### ⚡ 전기 계량기")
+    st.info(f"전월 기준 전기 수치: **{shop_info['전월전기']:,} kWh**")
+    curr_elec = st.number_input("당월 전기 계량기 수치 입력", value=0.0, step=1.0, format="%.1f", key="c_elec")
+    
+    st.markdown("")
+    
+    # 2. 수도 영역 (전월 아래 당월 배치)
+    st.markdown("### 💧 수도 계량기")
+    st.info(f"전월 기준 수도 수치: **{shop_info['전월수도']:,} ton**")
+    curr_water = st.number_input("당월 수도 계량기 수치 입력", value=0.0, step=1.0, format="%.1f", key="c_water")
         
     use_elec = curr_elec - shop_info["전월전기"]
     use_water = curr_water - shop_info["전월수도"]
     
+    st.markdown("---")
+    
     if curr_elec > 0 or curr_water > 0:
         if use_elec >= 0 and use_water >= 0:
-            st.caption(f"당월 사용량 - 전기: {round(use_elec, 1)} kWh / 수도: {round(use_water, 1)} ton")
+            st.success(f"📊 당월 사용량 - 전기: {round(use_elec, 1)} kWh / 수도: {round(use_water, 1)} ton")
         else:
             st.warning("⚠️ 당월 계량기 수치가 전월 기준 수치보다 작습니다. 수치를 확인해주세요.")
         
-    if st.button("이번 달 관리비 고지서 계산 및 수치 저장", key="calc_btn"):
+    if st.button("이번 달 관리비 고지서 계산하기", key="calc_btn"):
         if curr_elec == 0.0 and curr_water == 0.0:
             st.error("당월 계량기 수치를 입력해주세요.")
         elif use_elec < 0 or use_water < 0:
@@ -93,11 +101,8 @@ with tab1:
             fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
             total_fee = indiv_elec_fee + indiv_water_fee + fixed_sum
             
-            db["shops"][selected_shop] = {"전월전기": curr_elec, "전월수도": curr_water}
-            save_data(db)
-            
             st.markdown("---")
-            st.success(f"{selected_shop}님의 {cfg['month']} 총 청구금액: {total_fee:,.0f} 원 (수치 저장 완료!)")
+            st.success(f"📢 {selected_shop}님의 {cfg['month']} 총 청구금액: {total_fee:,.0f} 원")
             st.info(f"입금계좌: {cfg['account']}")
             
             c1, c2 = st.columns(2)
@@ -137,6 +142,7 @@ with tab2:
 
     st.markdown("---")
     st.markdown("### 2. 점포별 기준 수치 수동 수정/이월 점검")
+    st.caption("다음 달로 넘어갈 때 점포별 '전월 기준 수치'를 이번 달 당월 수치로 갱신(이월)해 주세요.")
     
     updated_shops = {}
     for shop_name, vals in shops.items():
