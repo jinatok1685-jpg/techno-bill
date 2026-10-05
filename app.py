@@ -6,23 +6,24 @@ st.set_page_config(page_title="테크노푸드몰 관리비 고지서", page_ico
 
 DATA_FILE = "data.json"
 
+# 9월 엑셀 파일의 당월 검침 수치를 10월의 전월(기준) 수치로 세팅
 DEFAULT_SHOPS = {
-    "지하105-3호 바른푸드(쌀국수)": {"전월전기": 121525.5, "전월수도": 1530.0},
-    "A동102호 두찜": {"전월전기": 63543.9, "전월수도": 1367.0},
-    "A동104호 멍앤멍": {"전월전기": 20357.6, "전월수도": 168.0},
-    "A동303호 점핑": {"전월전기": 45371.3, "전월수도": 137.0},
-    "B동107호 덮밥90도": {"전월전기": 64458.7, "전월수도": 703.0},
-    "B동108호 부릉": {"전월전기": 28438.6, "전월수도": 2.0}
+    "지하105-3호 바른푸드(쌀국수)": {"전월전기": 123243.4, "전월수도": 1549.0},
+    "A동102호 두찜": {"전월전기": 65010.4, "전월수도": 1391.0},
+    "A동104호 멍앤멍": {"전월전기": 20611.4, "전월수도": 170.0},
+    "A동303호 점핑": {"전월전기": 45613.6, "전월수도": 138.0},
+    "B동107호 덮밥90도": {"전월전기": 65680.0, "전월수도": 712.0},
+    "B동108호 부릉": {"전월전기": 28996.3, "전월수도": 2.0}
 }
 
 DEFAULT_CONFIG = {
     "month": "10월",
     "n_shops": 6,
-    "total_elec_kwh": 300000.0,
-    "total_elec_fee": 40000000,
-    "total_water_ton": 4000.0,
+    "total_elec_kwh": 0.0,
+    "total_elec_fee": 0,
+    "total_water_ton": 0.0,
     "total_water_fee": 11784000,
-    "elec_unit": 140.0,
+    "elec_unit": 135.0, # 9월 파일 기준 단가 반영
     "account": "카카오뱅크 7942-07-89864 (예금주: 하기수)"
 }
 
@@ -45,7 +46,7 @@ if "db" not in st.session_state:
 db = st.session_state.db
 
 st.title("🏢 테크노푸드몰 관리비 고지서")
-st.caption("당월 계량기 수치를 입력하시면 공용 요금과 고정비가 포함된 관리비가 자동으로 계산됩니다.")
+st.caption("당월 계량기 수치를 입력하시면 고정 공용비가 포함된 10월 관리비가 자동 계산됩니다.")
 
 tab1, tab2 = st.tabs(["📲 [점주용] 관리비 조회", "⚙️ [관리자] 단가 및 공용비 설정"])
 
@@ -80,16 +81,16 @@ with tab1:
         if use_elec < 0 or use_water < 0:
             st.error("당월 수치가 전월 수치보다 작습니다. 계량기 수치를 확인해주세요.")
         else:
-            # 수도 단가
+            # 수도 단가 (총수도요금 / 총수도사용량, 0으로 나누기 방지)
             water_unit = cfg["total_water_fee"] / cfg["total_water_ton"] if cfg["total_water_ton"] > 0 else 0
             
             # 개별 사용료
             indiv_elec_fee = use_elec * cfg["elec_unit"]
             indiv_water_fee = use_water * water_unit
             
-            # 공용 요금 및 고정 항목
-            public_elec_fee = 75000       # 공용전기요금 (각)
-            public_water_fee = 13000      # 공용수도요금 (각)
+            # 고정 공용비 및 공용 항목
+            public_elec_fee = 75000       # 공용전기요금 (고정 각 75,000원)
+            public_water_fee = 13000      # 공용수도요금 (고정 각 13,000원)
             
             base_elevator = 70000 / n
             elevator_fee = base_elevator + 50000 if "점핑" in selected_shop else base_elevator
@@ -116,8 +117,8 @@ with tab1:
             
             with c2:
                 st.markdown("### 🏢 공용 관리비 분담 항목")
-                st.write(f"- **공용전기요금**: {public_elec_fee:,.0f}원")
-                st.write(f"- **공용수도요금**: {public_water_fee:,.0f}원")
+                st.write(f"- **공용전기요금**: {public_elec_fee:,.0f}원 (고정)")
+                st.write(f"- **공용수도요금**: {public_water_fee:,.0f}원 (고정)")
                 st.write(f"- **엘리베이터 요금**: {elevator_fee:,.0f}원 {'(점핑 +50,000원 포함)' if '점핑' in selected_shop else ''}")
                 st.write(f"- **태동환경**: {taedong_fee:,.0f}원")
                 st.write(f"- **수선예비비**: {repair_reserve:,.0f}원")
@@ -164,7 +165,7 @@ with tab2:
                 st.rerun()
 
         st.markdown("---")
-        st.markdown("### 2️⃣ 점포별 수치 수동 수정/이월 점검")
+        st.markdown("### 2️⃣ 점포별 기준 수치 수동 수정/이월 점검")
         
         with st.form("shops_prev_form"):
             updated_shops = {}
@@ -181,5 +182,5 @@ with tab2:
             if submit_shops:
                 db["shops"] = updated_shops
                 save_data(db)
-                st.success("점포 수치가 개별 업데이트되었습니다!")
+                st.success("점포 기준 수치가 개별 업데이트되었습니다!")
                 st.rerun()
