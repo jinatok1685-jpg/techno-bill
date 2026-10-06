@@ -194,4 +194,9 @@ with tab1:
                 jump_text = " (점핑 +50,000원 포함)" if "점핑" in selected_shop else ""
                 st.write(f"- 엘리베이터 요금: {elevator_fee:,.0f}원{jump_text}")
                 st.write(f"- 태동환경: {taedong_fee:,.0f}원")
-                st.write(f"- 수선예비비
+                st.write(f"- 수선예비비: {repair_reserve:,.0f}원")
+                st.write(f"- 대한전기: {daehan_elec_fee:,.0f}원")
+
+with tab2:
+    st.subheader(f"📷 {db['config']['month']} 계량기 증빙 사진 게시판")
+    st.caption("점주님들께서 입력하신 계량기 수치의 증빙 사진을 업로드하고 다른 점주님들과 공유하는 공간입니다
