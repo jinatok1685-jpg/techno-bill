@@ -57,12 +57,28 @@ with tab1:
     n = cfg["n_shops"] if cfg["n_shops"] > 0 else 1
 
     st.subheader(f"{cfg['month']} 관리비 조회")
+    st.markdown("##### 🏪 본인의 점포 버튼을 선택해주세요")
     
     shop_list = list(shops.keys())
-    selected_shop = st.selectbox("가게(점포)를 선택하세요", shop_list, key="select_shop_main")
+    
+    # 세션 상태에 선택된 점포가 없으면 첫 번째 점포를 기본으로 선택
+    if "selected_shop" not in st.session_state or st.session_state.selected_shop not in shop_list:
+        st.session_state.selected_shop = shop_list[0]
+
+    # 6개 점포 버튼을 가로로 배치
+    cols = st.columns(len(shop_list))
+    for idx, shop_name in enumerate(shop_list):
+        with cols[idx]:
+            # 현재 선택된 점포 버튼은 강조 표시 느낌을 주기 위해 이모지 추가 혹은 기본 버튼 사용
+            btn_label = f"📍 {shop_name}" if st.session_state.selected_shop == shop_name else shop_name
+            if st.button(btn_label, key=f"btn_shop_{idx}", use_container_width=True):
+                st.session_state.selected_shop = shop_name
+
+    selected_shop = st.session_state.selected_shop
     shop_info = shops[selected_shop]
     
     st.markdown("---")
+    st.markdown(f"### 🔍 선택된 점포: **{selected_shop}**")
     
     # 1. 전기 영역
     st.markdown("### ⚡ 전기 계량기")
@@ -126,122 +142,4 @@ with tab1:
             with c1:
                 st.markdown("### 전기 및 수도 요금")
                 st.write(f"- **전기세**: {indiv_elec_fee:,.0f}원")
-                st.caption(f"  (사용량 {round(use_elec, 1)}kWh × 140원 + 공용전기 75,000원 + 기본전기 {base_elec_share:,.0f}원)")
-                
-                st.write(f"- **수도세**: {indiv_water_fee:,.0f}원")
-                st.caption(f"  (사용량 {round(use_water, 1)}톤 × 3,000원 + 공용수도 13,000원)")
-            
-            with c2:
-                st.markdown("### 기타 공용 관리비 분담 항목")
-                jump_text = " (점핑 +50,000원 포함)" if "점핑" in selected_shop else ""
-                st.write(f"- 엘리베이터 요금: {elevator_fee:,.0f}원{jump_text}")
-                st.write(f"- 태동환경: {taedong_fee:,.0f}원")
-                st.write(f"- 수선예비비: {repair_reserve:,.0f}원")
-                st.write(f"- 대한전기: {daehan_elec_fee:,.0f}원")
-
-with tab2:
-    st.subheader("관리자 설정")
-    
-    st.markdown("### 1. 기본 설정 (정산 월 및 계좌)")
-    m = st.text_input("정산 월", value=cfg["month"], key="cfg_month_input")
-    n_s = st.number_input("점포 수 (n)", value=int(cfg["n_shops"]), min_value=1, key="cfg_n_input")
-    acc = st.text_input("입금 계좌 안내", value=cfg["account"], key="cfg_acc_input")
-        
-    if st.button("기본 설정 저장하기", key="save_cfg_btn"):
-        db["config"] = {
-            "month": m,
-            "n_shops": int(n_s),
-            "account": acc
-        }
-        save_data(db)
-        st.success("기본 설정이 저장되었습니다!")
-        st.rerun()
-
-    st.markdown("---")
-    st.markdown("### 2. 📊 이번 달 전체 점포 현황 및 기준 수치 수정")
-    st.caption("각 점포의 **'전월 전기'와 '전월 수도' 수치를 직접 수정**하실 수 있으며, 당월 입력 현황과 총 관리비를 한눈에 확인할 수 있습니다.")
-    
-    updated_shops = {}
-    summary_data = []
-    
-    for shop_name, vals in shops.items():
-        st.markdown(f"**📌 {shop_name}**")
-        col_e, col_w, col_info = st.columns([1, 1, 2])
-        
-        with col_e:
-            pe = st.number_input("전월 전기 (kWh)", value=float(vals["전월전기"]), step=1.0, format="%.1f", key=f"adm_pe_{shop_name}")
-        with col_w:
-            pw = st.number_input("전월 수도 (ton)", value=float(vals["전월수도"]), step=1.0, format="%.1f", key=f"adm_pw_{shop_name}")
-            
-        updated_shops[shop_name] = {
-            "전월전기": pe, 
-            "전월수도": pw,
-            "당월전기": vals.get("당월전기", 0.0),
-            "당월수도": vals.get("당월수도", 0.0)
-        }
-        
-        c_e = vals.get("당월전기", 0.0)
-        c_w = vals.get("당월수도", 0.0)
-        
-        u_e = c_e - pe if c_e > 0 else 0.0
-        u_w = c_w - pw if c_w > 0 else 0.0
-        
-        if c_e > 0 and u_e >= 0 and c_w > 0 and u_w >= 0:
-            base_elec_share = 750000 / n
-            public_elec_fee = 75000
-            indiv_elec_fee = (u_e * 140.0) + public_elec_fee + base_elec_share
-            
-            public_water_fee = 13000
-            indiv_water_fee = (u_w * 3000.0) + public_water_fee
-            
-            base_elevator = 70000 / n
-            elevator_fee = base_elevator + 50000 if "점핑" in shop_name else base_elevator
-            taedong_fee = 370000 / n
-            repair_reserve = 10000
-            daehan_elec_fee = 231000 / n
-            
-            fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
-            total_fee = indiv_elec_fee + indiv_water_fee + fixed_sum
-            fee_str = f"{total_fee:,.0f} 원"
-        else:
-            fee_str = "미입력 또는 계산 전"
-            
-        summary_data.append({
-            "점포명": shop_name,
-            "당월 전기": f"{c_e:,.1f}" if c_e > 0 else "-",
-            "전기 사용량": f"{u_e:,.1f}" if c_e > 0 and u_e >= 0 else "-",
-            "당월 수도": f"{c_w:,.1f}" if c_w > 0 else "-",
-            "수도 사용량": f"{u_w:,.1f}" if c_w > 0 and u_w >= 0 else "-",
-            "총 관리비": fee_str
-        })
-        st.markdown("")
-
-    if st.button("수정된 기준 수치 및 전체 현황 저장", key="save_shops_btn"):
-        db["shops"] = updated_shops
-        save_data(db)
-        st.success("점포 기준 수치가 성공적으로 업데이트되었습니다!")
-        st.rerun()
-
-    st.markdown("---")
-    st.markdown("### 📋 당월 입력 및 요금 요약 표")
-    df_summary = pd.DataFrame(summary_data)
-    st.dataframe(df_summary, use_container_width=True, hide_index=True)
-
-    # 📥 종합 화면(CSV 파일) 다운로드 버튼 추가
-    csv_data = df_summary.to_csv(index=False).encode('utf-8-sig')
-    st.download_button(
-        label=f"💾 {cfg['month']} 종합 정산 결과 파일(CSV) 저장하기",
-        data=csv_data,
-        file_name=f"테크노푸드몰_{cfg['month']}_관리비정산.csv",
-        mime="text/csv",
-        key="download_summary_csv"
-    )
-
-    st.markdown("")
-    if st.button("🔄 모든 점포 당월 입력 상태 초기화하기 (미입력으로 되돌리기)", key="reset_inputs_btn"):
-        for shop_name in shops.keys():
-            db["shops"][shop_name]["당월전기"] = 0.0
-            db["shops"][shop_name]["당월수도"] = 0.0
-        save_data(db)
-        st.success("모든 점포의 당월 입력값이 초기화되었습니다!")
-        st.rerun()
+                st.caption(f"  (사용량 {round(use_elec, 1)}kWh × 140원 + 공용전기 75,000원 + 기본전기 {base_elec_
