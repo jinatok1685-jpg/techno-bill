@@ -3,7 +3,7 @@ import json
 import os
 import pandas as pd
 
-st.set_page_config(page_title="테크노푸드몰 관리비 고지서", layout="wide")
+st.set_page_config(page_title="테크노푸드몰", layout="wide")
 
 st.markdown("""
 <style>
@@ -70,7 +70,7 @@ db = st.session_state.db
 if "admin_auth" not in st.session_state:
     st.session_state.admin_auth = False
 
-st.title("테크노푸드몰 관리비 고지서")
+st.title("테크노푸드몰")
 st.caption("당월 계량기 수치를 입력하시면 요청하신 공식에 맞춰 전기세, 수도세 및 공용 관리비가 자동 계산됩니다.")
 
 tab1, tab2 = st.tabs(["점주용 관리비 조회", "관리자 설정"])
@@ -81,7 +81,7 @@ with tab1:
     n = cfg["n_shops"] if cfg["n_shops"] > 0 else 1
 
     st.subheader(f"{cfg['month']} 관리비 조회")
-    st.markdown("##### 🏪 본인의 점포를 클릭하여 선택해주세요")
+    st.markdown("##### 🏪 본인의 점포를 **클릭하여** 선택해주세요")
     
     shop_list = list(shops.keys())
     
