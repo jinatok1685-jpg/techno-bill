@@ -147,17 +147,29 @@ with tab2:
         st.rerun()
 
     st.markdown("---")
-    st.markdown("### 2. 📊 이번 달 전체 점포 현황 및 요금 요약")
-    st.caption("각 점포별로 입력된 당월 수치와 사용량, 계산된 총 관리비를 한눈에 확인할 수 있습니다.")
+    st.markdown("### 2. 📊 이번 달 전체 점포 현황 및 기준 수치 수정")
+    st.caption("각 점포의 **'전월 전기'와 '전월 수도' 수치를 직접 수정**하실 수 있으며, 당월 입력 현황과 총 관리비를 한눈에 확인할 수 있습니다.")
     
+    updated_shops = {}
     summary_data = []
+    
     for shop_name, vals in shops.items():
-        # 각 점포별 위젯 키에 저장된 당월 값 가져오기 (없으면 0.0)
+        st.markdown(f"**📌 {shop_name}**")
+        col_e, col_w, col_info = st.columns([1, 1, 2])
+        
+        with col_e:
+            pe = st.number_input("전월 전기 (kWh)", value=float(vals["전월전기"]), step=1.0, format="%.1f", key=f"adm_pe_{shop_name}")
+        with col_w:
+            pw = st.number_input("전월 수도 (ton)", value=float(vals["전월수도"]), step=1.0, format="%.1f", key=f"adm_pw_{shop_name}")
+            
+        updated_shops[shop_name] = {"전월전기": pe, "전월수도": pw}
+        
+        # 당월 값 및 사용량 계산
         c_e = st.session_state.get(f"c_elec_{shop_name}", 0.0)
         c_w = st.session_state.get(f"c_water_{shop_name}", 0.0)
         
-        u_e = c_e - vals["전월전기"] if c_e > 0 else 0.0
-        u_w = c_w - vals["전월수도"] if c_w > 0 else 0.0
+        u_e = c_e - pe if c_e > 0 else 0.0
+        u_w = c_w - pw if c_w > 0 else 0.0
         
         if c_e > 0 and u_e >= 0 and c_w > 0 and u_w >= 0:
             base_elec_share = 750000 / n
@@ -181,35 +193,21 @@ with tab2:
             
         summary_data.append({
             "점포명": shop_name,
-            "전월 전기": f"{vals['전월전기']:,.1f}",
             "당월 전기": f"{c_e:,.1f}" if c_e > 0 else "-",
             "전기 사용량": f"{u_e:,.1f}" if c_e > 0 and u_e >= 0 else "-",
-            "전월 수도": f"{vals['전월수도']:,.1f}",
             "당월 수도": f"{c_w:,.1f}" if c_w > 0 else "-",
             "수도 사용량": f"{u_w:,.1f}" if c_w > 0 and u_w >= 0 else "-",
             "총 관리비": fee_str
         })
-        
-    df_summary = pd.DataFrame(summary_data)
-    st.dataframe(df_summary, use_container_width=True, hide_index=True)
+        st.markdown("")
 
-    st.markdown("---")
-    st.markdown("### 3. 점포별 기준 수치 수동 수정/이월 점검")
-    st.caption("다음 달로 넘어갈 때 점포별 '전월 기준 수치'를 이번 달 당월 수치로 갱신(이월)해 주세요.")
-    
-    updated_shops = {}
-    for shop_name, vals in shops.items():
-        st.markdown(f"**{shop_name}**")
-        sc1, sc2 = st.columns(2)
-        with sc1:
-            pe = st.number_input("기준 전기(kWh)", value=float(vals["전월전기"]), key=f"pe_{shop_name}")
-        with sc2:
-            pw = st.number_input("기준 수도(ton)", value=float(vals["전월수도"]), key=f"pw_{shop_name}")
-        updated_shops[shop_name] = {"전월전기": pe, "전월수도": pw}
-        st.write("")
-    
-    if st.button("수치 수동 업데이트 저장", key="save_shops_btn"):
+    if st.button("수정된 기준 수치 및 전체 현황 저장", key="save_shops_btn"):
         db["shops"] = updated_shops
         save_data(db)
-        st.success("점포 기준 수치가 개별 업데이트되었습니다!")
+        st.success("점포 기준 수치가 성공적으로 업데이트되었습니다!")
         st.rerun()
+
+    st.markdown("---")
+    st.markdown("### 📋 당월 입력 및 요금 요약 표")
+    df_summary = pd.DataFrame(summary_data)
+    st.dataframe(df_summary, use_container_width=True, hide_index=True)
