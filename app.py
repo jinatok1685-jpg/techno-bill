@@ -1,6 +1,7 @@
 import streamlit as st
 import json
 import os
+import pandas as pd
 
 st.set_page_config(page_title="테크노푸드몰 관리비 고지서", layout="wide")
 
@@ -73,7 +74,6 @@ with tab1:
     
     st.markdown("---")
     
-    # 값이 입력되었을 때만 검증 (0.0 대기 상태일 때는 경고 문구 안 뜨도록 수정)
     if curr_elec > 0 or curr_water > 0:
         invalid_elec = (curr_elec > 0 and use_elec < 0)
         invalid_water = (curr_water > 0 and use_water < 0)
@@ -101,7 +101,7 @@ with tab1:
             base_elevator = 70000 / n
             elevator_fee = base_elevator + 50000 if "점핑" in selected_shop else base_elevator
             taedong_fee = 370000 / n
-            repair_reserve = 10000  # 수선예비비 1만원 유지
+            repair_reserve = 10000
             daehan_elec_fee = 231000 / n
             
             fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
@@ -147,7 +147,54 @@ with tab2:
         st.rerun()
 
     st.markdown("---")
-    st.markdown("### 2. 점포별 기준 수치 수동 수정/이월 점검")
+    st.markdown("### 2. 📊 이번 달 전체 점포 현황 및 요금 요약")
+    st.caption("각 점포별로 입력된 당월 수치와 사용량, 계산된 총 관리비를 한눈에 확인할 수 있습니다.")
+    
+    summary_data = []
+    for shop_name, vals in shops.items():
+        # 각 점포별 위젯 키에 저장된 당월 값 가져오기 (없으면 0.0)
+        c_e = st.session_state.get(f"c_elec_{shop_name}", 0.0)
+        c_w = st.session_state.get(f"c_water_{shop_name}", 0.0)
+        
+        u_e = c_e - vals["전월전기"] if c_e > 0 else 0.0
+        u_w = c_w - vals["전월수도"] if c_w > 0 else 0.0
+        
+        if c_e > 0 and u_e >= 0 and c_w > 0 and u_w >= 0:
+            base_elec_share = 750000 / n
+            public_elec_fee = 75000
+            indiv_elec_fee = (u_e * 140.0) + public_elec_fee + base_elec_share
+            
+            public_water_fee = 13000
+            indiv_water_fee = (u_w * 3000.0) + public_water_fee
+            
+            base_elevator = 70000 / n
+            elevator_fee = base_elevator + 50000 if "점핑" in shop_name else base_elevator
+            taedong_fee = 370000 / n
+            repair_reserve = 10000
+            daehan_elec_fee = 231000 / n
+            
+            fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
+            total_fee = indiv_elec_fee + indiv_water_fee + fixed_sum
+            fee_str = f"{total_fee:,.0f} 원"
+        else:
+            fee_str = "미입력 또는 계산 전"
+            
+        summary_data.append({
+            "점포명": shop_name,
+            "전월 전기": f"{vals['전월전기']:,.1f}",
+            "당월 전기": f"{c_e:,.1f}" if c_e > 0 else "-",
+            "전기 사용량": f"{u_e:,.1f}" if c_e > 0 and u_e >= 0 else "-",
+            "전월 수도": f"{vals['전월수도']:,.1f}",
+            "당월 수도": f"{c_w:,.1f}" if c_w > 0 else "-",
+            "수도 사용량": f"{u_w:,.1f}" if c_w > 0 and u_w >= 0 else "-",
+            "총 관리비": fee_str
+        })
+        
+    df_summary = pd.DataFrame(summary_data)
+    st.dataframe(df_summary, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+    st.markdown("### 3. 점포별 기준 수치 수동 수정/이월 점검")
     st.caption("다음 달로 넘어갈 때 점포별 '전월 기준 수치'를 이번 달 당월 수치로 갱신(이월)해 주세요.")
     
     updated_shops = {}
