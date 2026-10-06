@@ -61,15 +61,12 @@ with tab1:
     
     shop_list = list(shops.keys())
     
-    # 세션 상태에 선택된 점포가 없으면 첫 번째 점포를 기본으로 선택
     if "selected_shop" not in st.session_state or st.session_state.selected_shop not in shop_list:
         st.session_state.selected_shop = shop_list[0]
 
-    # 6개 점포 버튼을 가로로 배치
     cols = st.columns(len(shop_list))
     for idx, shop_name in enumerate(shop_list):
         with cols[idx]:
-            # 현재 선택된 점포 버튼은 강조 표시 느낌을 주기 위해 이모지 추가 혹은 기본 버튼 사용
             btn_label = f"📍 {shop_name}" if st.session_state.selected_shop == shop_name else shop_name
             if st.button(btn_label, key=f"btn_shop_{idx}", use_container_width=True):
                 st.session_state.selected_shop = shop_name
@@ -80,14 +77,12 @@ with tab1:
     st.markdown("---")
     st.markdown(f"### 🔍 선택된 점포: **{selected_shop}**")
     
-    # 1. 전기 영역
     st.markdown("### ⚡ 전기 계량기")
     st.info(f"전월 기준 전기 수치: **{shop_info['전월전기']:,} kWh**")
     curr_elec = st.number_input("당월 전기 계량기 수치 입력", value=float(shop_info["당월전기"]), step=1.0, format="%.1f", key=f"c_elec_{selected_shop}")
     
     st.markdown("")
     
-    # 2. 수도 영역
     st.markdown("### 💧 수도 계량기")
     st.info(f"전월 기준 수도 수치: **{shop_info['전월수도']:,} ton**")
     curr_water = st.number_input("당월 수도 계량기 수치 입력", value=float(shop_info["당월수도"]), step=1.0, format="%.1f", key=f"c_water_{selected_shop}")
@@ -142,4 +137,65 @@ with tab1:
             with c1:
                 st.markdown("### 전기 및 수도 요금")
                 st.write(f"- **전기세**: {indiv_elec_fee:,.0f}원")
-                st.caption(f"  (사용량 {round(use_elec, 1)}kWh × 140원 + 공용전기 75,000원 + 기본전기 {base_elec_
+                st.caption(f"  (사용량 {round(use_elec, 1)}kWh × 140원 + 공용전기 75,000원 + 기본전기 {base_elec_share:,.0f}원)")
+                
+                st.write(f"- **수도세**: {indiv_water_fee:,.0f}원")
+                st.caption(f"  (사용량 {round(use_water, 1)}톤 × 3,000원 + 공용수도 13,000원)")
+            
+            with c2:
+                st.markdown("### 기타 공용 관리비 분담 항목")
+                jump_text = " (점핑 +50,000원 포함)" if "점핑" in selected_shop else ""
+                st.write(f"- 엘리베이터 요금: {elevator_fee:,.0f}원{jump_text}")
+                st.write(f"- 태동환경: {taedong_fee:,.0f}원")
+                st.write(f"- 수선예비비: {repair_reserve:,.0f}원")
+                st.write(f"- 대한전기: {daehan_elec_fee:,.0f}원")
+
+with tab2:
+    st.subheader("관리자 설정")
+    
+    st.markdown("### 1. 기본 설정 (정산 월 및 계좌)")
+    m = st.text_input("정산 월", value=cfg["month"], key="cfg_month_input")
+    n_s = st.number_input("점포 수 (n)", value=int(cfg["n_shops"]), min_value=1, key="cfg_n_input")
+    acc = st.text_input("입금 계좌 안내", value=cfg["account"], key="cfg_acc_input")
+        
+    if st.button("기본 설정 저장하기", key="save_cfg_btn"):
+        db["config"] = {
+            "month": m,
+            "n_shops": int(n_s),
+            "account": acc
+        }
+        save_data(db)
+        st.success("기본 설정이 저장되었습니다!")
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown("### 2. 📊 이번 달 전체 점포 현황 및 기준 수치 수정")
+    st.caption("각 점포의 **'전월 전기'와 '전월 수도' 수치를 직접 수정**하실 수 있으며, 당월 입력 현황과 총 관리비를 한눈에 확인할 수 있습니다.")
+    
+    updated_shops = {}
+    summary_data = []
+    
+    for shop_name, vals in shops.items():
+        st.markdown(f"**📌 {shop_name}**")
+        col_e, col_w, col_info = st.columns([1, 1, 2])
+        
+        with col_e:
+            pe = st.number_input("전월 전기 (kWh)", value=float(vals["전월전기"]), step=1.0, format="%.1f", key=f"adm_pe_{shop_name}")
+        with col_w:
+            pw = st.number_input("전월 수도 (ton)", value=float(vals["전월수도"]), step=1.0, format="%.1f", key=f"adm_pw_{shop_name}")
+            
+        updated_shops[shop_name] = {
+            "전월전기": pe, 
+            "전월수도": pw,
+            "당월전기": vals.get("당월전기", 0.0),
+            "당월수도": vals.get("당월수도", 0.0)
+        }
+        
+        c_e = vals.get("당월전기", 0.0)
+        c_w = vals.get("당월수도", 0.0)
+        
+        u_e = c_e - pe if c_e > 0 else 0.0
+        u_w = c_w - pw if c_w > 0 else 0.0
+        
+        if c_e > 0 and u_e >= 0 and c_w > 0 and u_w >= 0:
+            base_elec_share = 750
