@@ -210,4 +210,4 @@ with tab2:
     st.markdown("---")
     st.markdown("### 📋 당월 입력 및 요금 요약 표")
     df_summary = pd.DataFrame(summary_data)
-    st.dataframe(df_summary, use_container_width=True, hide_index=True)
+    st.dataframe(df_summary
