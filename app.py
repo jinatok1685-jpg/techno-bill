@@ -210,4 +210,12 @@ with tab2:
     st.markdown("---")
     st.markdown("### 📋 당월 입력 및 요금 요약 표")
     df_summary = pd.DataFrame(summary_data)
-    st.dataframe(df_summary
+    st.dataframe(df_summary, use_container_width=True, hide_index=True)
+
+    st.markdown("")
+    if st.button("🔄 모든 점포 당월 입력 상태 초기화하기 (미입력으로 되돌리기)", key="reset_inputs_btn"):
+        for shop_name in shops.keys():
+            st.session_state[f"c_elec_{shop_name}"] = 0.0
+            st.session_state[f"c_water_{shop_name}"] = 0.0
+        st.success("모든 점포의 당월 입력값이 초기화되었습니다!")
+        st.rerun()
