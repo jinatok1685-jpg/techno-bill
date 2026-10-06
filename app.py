@@ -73,11 +73,17 @@ with tab1:
     
     st.markdown("---")
     
+    # 값이 입력되었을 때만 검증 (0.0 대기 상태일 때는 경고 문구 안 뜨도록 수정)
     if curr_elec > 0 or curr_water > 0:
-        if use_elec >= 0 and use_water >= 0:
-            st.success(f"📊 당월 사용량 - 전기: {round(use_elec, 1)} kWh / 수도: {round(use_water, 1)} ton")
-        else:
+        invalid_elec = (curr_elec > 0 and use_elec < 0)
+        invalid_water = (curr_water > 0 and use_water < 0)
+        
+        if invalid_elec or invalid_water:
             st.warning("⚠️ 당월 계량기 수치가 전월 기준 수치보다 작습니다. 수치를 확인해주세요.")
+        else:
+            disp_elec = use_elec if curr_elec > 0 else 0.0
+            disp_water = use_water if curr_water > 0 else 0.0
+            st.success(f"📊 당월 사용량 - 전기: {round(disp_elec, 1)} kWh / 수도: {round(disp_water, 1)} ton")
         
     if st.button("이번 달 관리비 고지서 계산하기", key=f"calc_btn_{selected_shop}"):
         if curr_elec == 0.0 and curr_water == 0.0:
@@ -95,7 +101,7 @@ with tab1:
             base_elevator = 70000 / n
             elevator_fee = base_elevator + 50000 if "점핑" in selected_shop else base_elevator
             taedong_fee = 370000 / n
-            repair_reserve = 10000  # 2만원에서 1만원으로 변경 반영
+            repair_reserve = 10000  # 수선예비비 1만원 유지
             daehan_elec_fee = 231000 / n
             
             fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
