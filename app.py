@@ -5,10 +5,8 @@ import pandas as pd
 
 st.set_page_config(page_title="테크노푸드몰 관리비 고지서", layout="wide")
 
-# 선택된 버튼 강조를 위한 커스텀 CSS
 st.markdown("""
 <style>
-    /* 기본 버튼 스타일 */
     .stButton > button {
         width: 100%;
         border-radius: 8px;
@@ -88,7 +86,6 @@ with tab1:
     for idx, shop_name in enumerate(shop_list):
         with cols[idx]:
             is_selected = (st.session_state.selected_shop == shop_name)
-            
             if is_selected:
                 btn_label = f"👉 [ {shop_name} ]"
             else:
@@ -102,7 +99,6 @@ with tab1:
     shop_info = shops[selected_shop]
     
     st.markdown("---")
-    
     st.markdown(f"""
     <div style="padding: 15px 20px; background-color: #eff6ff; border-left: 6px solid #3b82f6; border-radius: 4px; margin-bottom: 20px;">
         <h3 style="margin: 0; color: #1e40af;">🔍 현재 선택된 점포: {selected_shop}</h3>
@@ -229,4 +225,61 @@ with tab2:
         u_e = c_e - pe if c_e > 0 else 0.0
         u_w = c_w - pw if c_w > 0 else 0.0
         
-        if c_e > 0 and u_e >= 0 and c_w > 0
+        if c_e > 0 and u_e >= 0 and c_w > 0 and u_w >= 0:
+            base_elec_share = 750000 / n
+            public_elec_fee = 75000
+            indiv_elec_fee = (u_e * 140.0) + public_elec_fee + base_elec_share
+            
+            public_water_fee = 13000
+            indiv_water_fee = (u_w * 3000.0) + public_water_fee
+            
+            base_elevator = 70000 / n
+            elevator_fee = base_elevator + 50000 if "점핑" in shop_name else base_elevator
+            taedong_fee = 370000 / n
+            repair_reserve = 10000
+            daehan_elec_fee = 231000 / n
+            
+            fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
+            total_fee = indiv_elec_fee + indiv_water_fee + fixed_sum
+            fee_str = f"{total_fee:,.0f} 원"
+        else:
+            fee_str = "미입력 또는 계산 전"
+            
+        summary_data.append({
+            "점포명": shop_name,
+            "당월 전기": f"{c_e:,.1f}" if c_e > 0 else "-",
+            "전기 사용량": f"{u_e:,.1f}" if c_e > 0 and u_e >= 0 else "-",
+            "당월 수도": f"{c_w:,.1f}" if c_w > 0 else "-",
+            "수도 사용량": f"{u_w:,.1f}" if c_w > 0 and u_w >= 0 else "-",
+            "총 관리비": fee_str
+        })
+        st.markdown("")
+
+    if st.button("수정된 기준 수치 및 전체 현황 저장", key="save_shops_btn"):
+        db["shops"] = updated_shops
+        save_data(db)
+        st.success("점포 기준 수치가 성공적으로 업데이트되었습니다!")
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown("### 📋 당월 입력 및 요금 요약 표")
+    df_summary = pd.DataFrame(summary_data)
+    st.dataframe(df_summary, use_container_width=True, hide_index=True)
+
+    csv_data = df_summary.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(
+        label=f"💾 {cfg['month']} 종합 정산 결과 파일(CSV) 저장하기",
+        data=csv_data,
+        file_name=f"테크노푸드몰_{cfg['month']}_관리비정산.csv",
+        mime="text/csv",
+        key="download_summary_csv"
+    )
+
+    st.markdown("")
+    if st.button("🔄 모든 점포 당월 입력 상태 초기화하기 (미입력으로 되돌리기)", key="reset_inputs_btn"):
+        for shop_name in shops.keys():
+            db["shops"][shop_name]["당월전기"] = 0.0
+            db["shops"][shop_name]["당월수도"] = 0.0
+        save_data(db)
+        st.success("모든 점포의 당월 입력값이 초기화되었습니다!")
+        st.rerun()
