@@ -26,12 +26,12 @@ st.markdown("""
 DATA_FILE = "data.json"
 
 DEFAULT_SHOPS = {
-    "지하105-3호 바른푸드(쌀국수)": {"전월전기": 123243, "전월수도": 1549, "당월전기": 0, "당월수도": 0},
-    "A동102호 두찜": {"전월전기": 65010, "전월수도": 1391, "당월전기": 0, "당월수도": 0},
-    "A동104호 멍앤멍": {"전월전기": 20611, "전월수도": 170, "당월전기": 0, "당월수도": 0},
-    "A동303호 점핑": {"전월전기": 45613, "전월수도": 138, "당월전기": 0, "당월수도": 0},
-    "B동107호 덮밥90도": {"전월전기": 65680, "전월수도": 712, "당월전기": 0, "당월수도": 0},
-    "B동108호 부릉": {"전월전기": 28996, "전월수도": 2, "당월전기": 0, "당월수도": 0}
+    "지하105-3호 바른푸드(쌀국수)": {"전월전기": 123243.4, "전월수도": 1549.0, "당월전기": 0.0, "당월수도": 0.0},
+    "A동102호 두찜": {"전월전기": 65010.4, "전월수도": 1391.0, "당월전기": 0.0, "당월수도": 0.0},
+    "A동104호 멍앤멍": {"전월전기": 20611.4, "전월수도": 170.0, "당월전기": 0.0, "당월수도": 0.0},
+    "A동303호 점핑": {"전월전기": 45613.6, "전월수도": 138.0, "당월전기": 0.0, "당월수도": 0.0},
+    "B동107호 덮밥90도": {"전월전기": 65680.0, "전월수도": 712.0, "당월전기": 0.0, "당월수도": 0.0},
+    "B동108호 부릉": {"전월전기": 28996.3, "전월수도": 2.0, "당월전기": 0.0, "당월수도": 0.0}
 }
 
 DEFAULT_CONFIG = {
@@ -48,9 +48,9 @@ def load_data():
                 data = json.load(f)
                 for shop in data.get("shops", {}):
                     if "당월전기" not in data["shops"][shop]:
-                        data["shops"][shop]["당월전기"] = 0
+                        data["shops"][shop]["당월전기"] = 0.0
                     if "당월수도" not in data["shops"][shop]:
-                        data["shops"][shop]["당월수도"] = 0
+                        data["shops"][shop]["당월수도"] = 0.0
                 if "config" in data and "admin_password" not in data["config"]:
                     data["config"]["admin_password"] = "1234"
                 return data
@@ -112,17 +112,27 @@ with tab1:
     """, unsafe_allow_html=True)
     
     st.markdown("### ⚡ 전기 계량기")
-    st.info(f"전월 기준 전기 수치: **{int(shop_info['전월전기']):,} kWh**")
-    curr_elec = st.number_input("당월 전기 계량기 수치 입력", value=int(shop_info["당월전기"]), step=1, key=f"c_elec_{selected_shop}")
+    st.info(f"전월 기준 전기 수치: **{shop_info['전월전기']:,.1f} kWh**")
+    
+    elec_key = f"c_elec_{selected_shop}"
+    if elec_key not in st.session_state:
+        st.session_state[elec_key] = float(shop_info["당월전기"])
+        
+    curr_elec = st.number_input("당월 전기 계량기 수치 입력", value=float(shop_info["당월전기"]), step=1.0, format="%.1f", key=elec_key)
     
     st.markdown("")
     
     st.markdown("### 💧 수도 계량기")
-    st.info(f"전월 기준 수도 수치: **{int(shop_info['전월수도']):,} ton**")
-    curr_water = st.number_input("당월 수도 계량기 수치 입력", value=int(shop_info["당월수도"]), step=1, key=f"c_water_{selected_shop}")
+    st.info(f"전월 기준 수도 수치: **{shop_info['전월수도']:,.1f} ton**")
+    
+    water_key = f"c_water_{selected_shop}"
+    if water_key not in st.session_state:
+        st.session_state[water_key] = float(shop_info["당월수도"])
         
-    use_elec = curr_elec - shop_info["전월전기"]
-    use_water = curr_water - shop_info["전월수도"]
+    curr_water = st.number_input("당월 수도 계량기 수치 입력", value=float(shop_info["당월수도"]), step=1.0, format="%.1f", key=water_key)
+        
+    use_elec = round(curr_elec - shop_info["전월전기"], 1)
+    use_water = round(curr_water - shop_info["전월수도"], 1)
     
     st.markdown("---")
     
@@ -133,12 +143,12 @@ with tab1:
         if invalid_elec or invalid_water:
             st.warning("⚠️ 당월 계량기 수치가 전월 기준 수치보다 작습니다. 수치를 확인해주세요.")
         else:
-            disp_elec = use_elec if curr_elec > 0 else 0
-            disp_water = use_water if curr_water > 0 else 0
-            st.success(f"📊 당월 사용량 - 전기: {disp_elec:,} kWh / 수도: {disp_water:,} ton")
+            disp_elec = use_elec if curr_elec > 0 else 0.0
+            disp_water = use_water if curr_water > 0 else 0.0
+            st.success(f"📊 당월 사용량 - 전기: {disp_elec:,.1f} kWh / 수도: {disp_water:,.1f} ton")
         
     if st.button("이번 달 관리비 고지서 계산하기 및 저장", key=f"calc_btn_{selected_shop}"):
-        if curr_elec == 0 and curr_water == 0:
+        if curr_elec == 0.0 and curr_water == 0.0:
             st.error("당월 계량기 수치를 입력해주세요.")
         elif use_elec < 0 or use_water < 0:
             st.error("당월 수치가 전월 수치보다 작습니다. 계량기 수치를 확인해주세요.")
@@ -171,10 +181,10 @@ with tab1:
             with c1:
                 st.markdown("### 전기 및 수도 요금")
                 st.write(f"- **전기세**: {indiv_elec_fee:,.0f}원")
-                st.caption(f"  (사용량 {use_elec:,}kWh × 140원 + 공용전기 75,000원 + 기본전기 {base_elec_share:,.0f}원)")
+                st.caption(f"  (사용량 {use_elec:,.1f}kWh × 140원 + 공용전기 75,000원 + 기본전기 {base_elec_share:,.0f}원)")
                 
                 st.write(f"- **수도세**: {indiv_water_fee:,.0f}원")
-                st.caption(f"  (사용량 {use_water:,}톤 × 3,000원 + 공용수도 13,000원)")
+                st.caption(f"  (사용량 {use_water:,.1f}톤 × 3,000원 + 공용수도 13,000원)")
             
             with c2:
                 st.markdown("### 기타 공용 관리비 분담 항목")
@@ -237,78 +247,4 @@ with tab2:
             col_e, col_w, col_info = st.columns([1, 1, 2])
             
             with col_e:
-                pe = st.number_input("전월 전기 (kWh)", value=int(vals["전월전기"]), step=1, key=f"adm_pe_{shop_name}")
-            with col_w:
-                pw = st.number_input("전월 수도 (ton)", value=int(vals["전월수도"]), step=1, key=f"adm_pw_{shop_name}")
-                
-            updated_shops[shop_name] = {
-                "전월전기": pe, 
-                "전월수도": pw,
-                "당월전기": vals.get("당월전기", 0),
-                "당월수도": vals.get("당월수도", 0)
-            }
-            
-            c_e = vals.get("당월전기", 0)
-            c_w = vals.get("당월수도", 0)
-            
-            u_e = c_e - pe if c_e > 0 else 0
-            u_w = c_w - pw if c_w > 0 else 0
-            
-            if c_e > 0 and u_e >= 0 and c_w > 0 and u_w >= 0:
-                base_elec_share = 750000 / n
-                public_elec_fee = 75000
-                indiv_elec_fee = (u_e * 140.0) + public_elec_fee + base_elec_share
-                
-                public_water_fee = 13000
-                indiv_water_fee = (u_w * 3000.0) + public_water_fee
-                
-                base_elevator = 70000 / n
-                elevator_fee = base_elevator + 50000 if "점핑" in shop_name else base_elevator
-                taedong_fee = 370000 / n
-                repair_reserve = 10000
-                daehan_elec_fee = 231000 / n
-                
-                fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
-                total_fee = indiv_elec_fee + indiv_water_fee + fixed_sum
-                fee_str = f"{total_fee:,.0f} 원"
-            else:
-                fee_str = "미입력 또는 계산 전"
-                
-            summary_data.append({
-                "점포명": shop_name,
-                "당월 전기": f"{c_e:,}" if c_e > 0 else "-",
-                "전기 사용량": f"{u_e:,}" if c_e > 0 and u_e >= 0 else "-",
-                "당월 수도": f"{c_w:,}" if c_w > 0 else "-",
-                "수도 사용량": f"{u_w:,}" if c_w > 0 and u_w >= 0 else "-",
-                "총 관리비": fee_str
-            })
-            st.markdown("")
-
-        if st.button("수정된 기준 수치 및 전체 현황 저장", key="save_shops_btn"):
-            db["shops"] = updated_shops
-            save_data(db)
-            st.success("점포 기준 수치가 성공적으로 업데이트되었습니다!")
-            st.rerun()
-
-        st.markdown("---")
-        st.markdown("### 📋 당월 입력 및 요금 요약 표")
-        df_summary = pd.DataFrame(summary_data)
-        st.dataframe(df_summary, use_container_width=True, hide_index=True)
-
-        csv_data = df_summary.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            label=f"💾 {cfg['month']} 종합 정산 결과 파일(CSV) 저장하기",
-            data=csv_data,
-            file_name=f"테크노푸드몰_{cfg['month']}_관리자정산.csv",
-            mime="text/csv",
-            key="download_summary_csv"
-        )
-
-        st.markdown("")
-        if st.button("🔄 모든 점포 당월 입력 상태 초기화하기 (미입력으로 되돌리기)", key="reset_inputs_btn"):
-            for shop_name in shops.keys():
-                db["shops"][shop_name]["당월전기"] = 0
-                db["shops"][shop_name]["당월수도"] = 0
-            save_data(db)
-            st.success("모든 점포의 당월 입력값이 초기화되었습니다!")
-            st.rerun()
+                pe = st.number_input("전월 전기 (kWh)", value=float
