@@ -204,30 +204,28 @@ with tab2:
     with st.form("upload_form", clear_on_submit=True):
         st.markdown("#### 📝 새 증빙 사진 등록")
         post_shop = st.selectbox("점포 선택", list(db["shops"].keys()), key="post_shop_select")
-        post_title = st.text_input("제목 (예: 10월 전기/수도 계량기 인증)", key="post_title_input")
         uploaded_image = st.file_uploader("계량기 사진 업로드 (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"], key="post_img_file")
         post_desc = st.text_area("설명 또는 메모 (선택사항)", key="post_desc_input")
         
         submit_post = st.form_submit_button("사진 등록하기")
         if submit_post:
-            if not post_title.strip():
-                st.error("제목을 입력해주세요.")
-            elif not uploaded_image:
+            if not uploaded_image:
                 st.error("업로드할 계량기 사진을 첨부해주세요.")
             else:
                 if "posts" not in db:
                     db["posts"] = []
                 
+                auto_title = f"{db['config']['month']} 계량기 인증"
                 new_post = {
                     "id": datetime.now().strftime("%Y%m%d%H%M%S"),
                     "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
                     "shop": post_shop,
-                    "title": post_title,
+                    "title": auto_title,
                     "image_name": uploaded_image.name,
-                    "image_bytes": uploaded_image.getvalue().hex(), # 바이트를 hex 문자열로 저장하여 JSON 직렬화 가능하게 함
+                    "image_bytes": uploaded_image.getvalue().hex(),
                     "desc": post_desc
                 }
-                db["posts"].insert(0, new_post) # 최신글이 위로 오도록
+                db["posts"].insert(0, new_post)
                 save_data(db)
                 st.success("계량기 증빙 사진이 성공적으로 등록되었습니다!")
                 st.rerun()
