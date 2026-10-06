@@ -2,6 +2,7 @@ import streamlit as st
 import json
 import os
 import pandas as pd
+from datetime import datetime
 
 st.set_page_config(page_title="테크노푸드몰", layout="wide")
 
@@ -53,10 +54,12 @@ def load_data():
                         data["shops"][shop]["당월수도"] = 0.0
                 if "config" in data and "admin_password" not in data["config"]:
                     data["config"]["admin_password"] = "1234"
+                if "posts" not in data:
+                    data["posts"] = []
                 return data
         except Exception:
             pass
-    return {"shops": DEFAULT_SHOPS, "config": DEFAULT_CONFIG}
+    return {"shops": DEFAULT_SHOPS, "config": DEFAULT_CONFIG, "posts": []}
 
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -73,7 +76,7 @@ if "admin_auth" not in st.session_state:
 st.title("테크노푸드몰")
 st.caption("당월 계량기 수치를 입력하시면 요청하신 공식에 맞춰 전기세, 수도세 및 공용 관리비가 자동 계산됩니다.")
 
-tab1, tab2 = st.tabs(["점주용 관리비 조회", "관리자 설정"])
+tab1, tab2, tab3 = st.tabs(["점주용 관리비 조회", "📷 계량기 증빙 사진 게시판", "관리자 설정"])
 
 with tab1:
     cfg = db["config"]
@@ -195,6 +198,71 @@ with tab1:
                 st.write(f"- 대한전기: {daehan_elec_fee:,.0f}원")
 
 with tab2:
+    st.subheader(f"📷 {db['config']['month']} 계량기 증빙 사진 게시판")
+    st.caption("점주님들께서 입력하신 계량기 수치의 증빙 사진을 업로드하고 다른 점주님들과 공유하는 공간입니다.")
+    
+    with st.form("upload_form", clear_on_submit=True):
+        st.markdown("#### 📝 새 증빙 사진 등록")
+        post_shop = st.selectbox("점포 선택", list(db["shops"].keys()), key="post_shop_select")
+        post_title = st.text_input("제목 (예: 10월 전기/수도 계량기 인증)", key="post_title_input")
+        uploaded_image = st.file_uploader("계량기 사진 업로드 (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"], key="post_img_file")
+        post_desc = st.text_area("설명 또는 메모 (선택사항)", key="post_desc_input")
+        
+        submit_post = st.form_submit_button("사진 등록하기")
+        if submit_post:
+            if not post_title.strip():
+                st.error("제목을 입력해주세요.")
+            elif not uploaded_image:
+                st.error("업로드할 계량기 사진을 첨부해주세요.")
+            else:
+                if "posts" not in db:
+                    db["posts"] = []
+                
+                new_post = {
+                    "id": datetime.now().strftime("%Y%m%d%H%M%S"),
+                    "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "shop": post_shop,
+                    "title": post_title,
+                    "image_name": uploaded_image.name,
+                    "image_bytes": uploaded_image.getvalue().hex(), # 바이트를 hex 문자열로 저장하여 JSON 직렬화 가능하게 함
+                    "desc": post_desc
+                }
+                db["posts"].insert(0, new_post) # 최신글이 위로 오도록
+                save_data(db)
+                st.success("계량기 증빙 사진이 성공적으로 등록되었습니다!")
+                st.rerun()
+
+    st.markdown("---")
+    st.markdown("### 📋 등록된 증빙 사진 목록")
+    
+    posts = db.get("posts", [])
+    if not posts:
+        st.info("등록된 계량기 증빙 사진이 없습니다. 첫 번째 인증 사진을 등록해보세요!")
+    else:
+        for idx, post in enumerate(posts):
+            with st.container():
+                st.markdown(f"#### 📌 [{post['shop']}] {post['title']}")
+                st.caption(f"작성일시: {post['date']} | 점포: {post['shop']}")
+                
+                try:
+                    img_bytes = bytes.fromhex(post["image_bytes"])
+                    st.image(img_bytes, caption=post['image_name'], use_container_width=True)
+                except Exception:
+                    st.warning("이미지를 불러오는 중 오류가 발생했습니다.")
+                
+                if post.get("desc"):
+                    st.info(f"메모: {post['desc']}")
+                
+                if st.session_state.get("admin_auth", False):
+                    if st.button(f"🗑️ 이 게시물 삭제 (관리자용)", key=f"del_post_{post['id']}_{idx}"):
+                        db["posts"].remove(post)
+                        save_data(db)
+                        st.success("게시물이 삭제되었습니다.")
+                        st.rerun()
+                
+                st.markdown("---")
+
+with tab3:
     st.subheader("관리자 설정")
     cfg = db["config"]
     shops = db["shops"]
