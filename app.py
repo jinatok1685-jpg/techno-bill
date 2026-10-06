@@ -247,4 +247,15 @@ with tab2:
             col_e, col_w, col_info = st.columns([1, 1, 2])
             
             with col_e:
-                pe = st.number_input("전월 전기 (kWh)", value=float
+                pe = st.number_input("전월 전기 (kWh)", value=float(vals["전월전기"]), step=1.0, format="%.1f", key=f"adm_pe_{shop_name}")
+            with col_w:
+                pw = st.number_input("전월 수도 (ton)", value=float(vals["전월수도"]), step=1.0, format="%.1f", key=f"adm_pw_{shop_name}")
+                
+            updated_shops[shop_name] = {
+                "전월전기": pe, 
+                "전월수도": pw,
+                "당월전기": vals.get("당월전기", 0.0),
+                "당월수도": vals.get("당월수도", 0.0)
+            }
+            
+            c_e =
