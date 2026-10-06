@@ -258,4 +258,25 @@ with tab2:
                 "당월수도": vals.get("당월수도", 0.0)
             }
             
-            c_e =
+            c_e = vals.get("당월전기", 0.0)
+            c_w = vals.get("당월수도", 0.0)
+            
+            u_e = round(c_e - pe, 1) if c_e > 0 else 0.0
+            u_w = round(c_w - pw, 1) if c_w > 0 else 0.0
+            
+            if c_e > 0 and u_e >= 0 and c_w > 0 and u_w >= 0:
+                base_elec_share = 750000 / n
+                public_elec_fee = 75000
+                indiv_elec_fee = (u_e * 140.0) + public_elec_fee + base_elec_share
+                
+                public_water_fee = 13000
+                indiv_water_fee = (u_w * 3000.0) + public_water_fee
+                
+                base_elevator = 70000 / n
+                elevator_fee = base_elevator + 50000 if "점핑" in shop_name else base_elevator
+                taedong_fee = 370000 / n
+                repair_reserve = 10000
+                daehan_elec_fee = 231000 / n
+                
+                fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
+                total_
