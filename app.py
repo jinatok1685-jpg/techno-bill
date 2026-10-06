@@ -5,6 +5,26 @@ import pandas as pd
 
 st.set_page_config(page_title="테크노푸드몰 관리비 고지서", layout="wide")
 
+# 선택된 버튼 강조를 위한 커스텀 CSS
+st.markdown("""
+<style>
+    /* 기본 버튼 스타일 */
+    .stButton > button {
+        width: 100%;
+        border-radius: 8px;
+        height: 3em;
+        font-weight: 600;
+        border: 1px solid #d1d5db;
+        background-color: #f9fafb;
+        color: #374151;
+    }
+    .stButton > button:hover {
+        border-color: #3b82f6;
+        color: #3b82f6;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 DATA_FILE = "data.json"
 
 DEFAULT_SHOPS = {
@@ -57,7 +77,7 @@ with tab1:
     n = cfg["n_shops"] if cfg["n_shops"] > 0 else 1
 
     st.subheader(f"{cfg['month']} 관리비 조회")
-    st.markdown("##### 🏪 본인의 점포 버튼을 선택해주세요")
+    st.markdown("##### 🏪 본인의 점포를 클릭하여 선택해주세요")
     
     shop_list = list(shops.keys())
     
@@ -67,15 +87,29 @@ with tab1:
     cols = st.columns(len(shop_list))
     for idx, shop_name in enumerate(shop_list):
         with cols[idx]:
-            btn_label = f"📍 {shop_name}" if st.session_state.selected_shop == shop_name else shop_name
+            is_selected = (st.session_state.selected_shop == shop_name)
+            
+            # 선택된 버튼은 눈에 띄게 이모지와 하이라이트 표시
+            if is_selected:
+                btn_label = f"👉 [ {shop_name} ]"
+            else:
+                btn_label = shop_name
+                
             if st.button(btn_label, key=f"btn_shop_{idx}", use_container_width=True):
                 st.session_state.selected_shop = shop_name
+                st.rerun()
 
     selected_shop = st.session_state.selected_shop
     shop_info = shops[selected_shop]
     
     st.markdown("---")
-    st.markdown(f"### 🔍 선택된 점포: **{selected_shop}**")
+    
+    # 선택된 점포를 커스텀 박스로 확실하게 강조
+    st.markdown(f"""
+    <div style="padding: 15px 20px; background-color: #eff6ff; border-left: 6px solid #3b82f6; border-radius: 4px; margin-bottom: 20px;">
+        <h3 style="margin: 0; color: #1e40af;">🔍 현재 선택된 점포: {selected_shop}</h3>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.markdown("### ⚡ 전기 계량기")
     st.info(f"전월 기준 전기 수치: **{shop_info['전월전기']:,} kWh**")
@@ -198,4 +232,44 @@ with tab2:
         u_w = c_w - pw if c_w > 0 else 0.0
         
         if c_e > 0 and u_e >= 0 and c_w > 0 and u_w >= 0:
-            base_elec_share = 750
+            base_elec_share = 750000 / n
+            public_elec_fee = 75000
+            indiv_elec_fee = (u_e * 140.0) + public_elec_fee + base_elec_share
+            
+            public_water_fee = 13000
+            indiv_water_fee = (u_w * 3000.0) + public_water_fee
+            
+            base_elevator = 70000 / n
+            elevator_fee = base_elevator + 50000 if "점핑" in shop_name else base_elevator
+            taedong_fee = 370000 / n
+            repair_reserve = 10000
+            daehan_elec_fee = 231000 / n
+            
+            fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
+            total_fee = indiv_elec_fee + indiv_water_fee + fixed_sum
+            fee_str = f"{total_fee:,.0f} 원"
+        else:
+            fee_str = "미입력 또는 계산 전"
+            
+        summary_data.append({
+            "점포명": shop_name,
+            "당월 전기": f"{c_e:,.1f}" if c_e > 0 else "-",
+            "전기 사용량": f"{u_e:,.1f}" if c_e > 0 and u_e >= 0 else "-",
+            "당월 수도": f"{c_w:,.1f}" if c_w > 0 else "-",
+            "수도 사용량": f"{u_w:,.1f}" if c_w > 0 and u_w >= 0 else "-",
+            "총 관리비": fee_str
+        })
+        st.markdown("")
+
+    if st.button("수정된 기준 수치 및 전체 현황 저장", key="save_shops_btn"):
+        db["shops"] = updated_shops
+        save_data(db)
+        st.success("점포 기준 수치가 성공적으로 업데이트되었습니다!")
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown("### 📋 당월 입력 및 요금 요약 표")
+    df_summary = pd.DataFrame(summary_data)
+    st.dataframe(df_summary, use_container_width=True, hide_index=True)
+
+    csv_data = df_summary.to_csv(index=False).encode('utf-8-sig
