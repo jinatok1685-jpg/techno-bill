@@ -231,12 +231,21 @@ except Exception as e:
 if "admin_auth" not in st.session_state:
     st.session_state.admin_auth = False
 
-st.title("테크노푸드몰")
-st.caption("당월 계량기 수치를 입력하시면 요청하신 공식에 맞춰 전기세, 수도세 및 공용 관리비가 자동 계산됩니다.")
+page = st.session_state.get("page", "fee")
 
-tab1, tab2, tab3 = st.tabs(["점주용 관리비 조회", "📷 계량기 증빙 사진 게시판", "관리자 설정"])
+# 화면이 바뀌면 맨 위로 올리기
+if st.session_state.pop("scroll_top", False):
+    st.session_state.scroll_n = st.session_state.get("scroll_n", 0) + 1
+    components.html(f"""<script>
+        // {st.session_state.scroll_n}
+        const d = window.parent.document;
+        window.parent.scrollTo(0, 0);
+        d.querySelectorAll('[data-testid="stAppViewContainer"], [data-testid="stMain"], section.main')
+         .forEach(e => e.scrollTo(0, 0));
+    </script>""", height=0)
 
-with tab1:
+
+if page == "fee":
     cfg = db["config"]
     shops = db["shops"]
     n = cfg["n_shops"] if cfg["n_shops"] > 0 else 1
@@ -245,17 +254,6 @@ with tab1:
 
     if st.session_state.get("selected_shop") not in shop_list:
         st.session_state.selected_shop = None
-
-    # 화면이 바뀌면 맨 위로 올리기
-    if st.session_state.pop("scroll_top", False):
-        st.session_state.scroll_n = st.session_state.get("scroll_n", 0) + 1
-        components.html(f"""<script>
-            // {st.session_state.scroll_n}
-            const d = window.parent.document;
-            window.parent.scrollTo(0, 0);
-            d.querySelectorAll('[data-testid="stAppViewContainer"], [data-testid="stMain"], section.main')
-             .forEach(e => e.scrollTo(0, 0));
-        </script>""", height=0)
 
     if st.session_state.selected_shop is None:
         # ── 첫 화면: 점포 목록 ──
@@ -383,7 +381,7 @@ with tab1:
                 go(1)
                 st.rerun()
 
-with tab2:
+if page == "photo":
     st.subheader(f"📷 {db['config']['month']} 계량기 증빙 사진 게시판")
     st.caption("점주님들께서 입력하신 계량기 수치의 증빙 사진을 업로드하고 다른 점주님들과 공유하는 공간입니다.")
 
@@ -465,7 +463,7 @@ with tab2:
 
                 st.markdown("---")
 
-with tab3:
+if page == "admin":
     st.subheader("관리자 설정")
     cfg = db["config"]
     shops = db["shops"]
@@ -596,3 +594,16 @@ with tab3:
                         del st.session_state[k]
                 st.success("모든 점포의 당월 입력값이 초기화되었습니다!")
                 st.rerun()
+
+
+# ───────────── 아래쪽 메뉴 ─────────────
+st.markdown("---")
+MENU = [("fee", "관리비 조회"), ("photo", "📷 사진 게시판"), ("admin", "관리자 설정")]
+for col, (k, label) in zip(st.columns(len(MENU)), MENU):
+    with col:
+        if st.button(f"👉 {label}" if page == k else label, key=f"menu_{k}", use_container_width=True):
+            st.session_state.page = k
+            st.session_state.scroll_top = True
+            st.rerun()
+st.markdown("<div style='text-align:center; color:#9ca3af; font-size:0.9em; margin-top:6px;'>테크노푸드몰</div>",
+            unsafe_allow_html=True)
