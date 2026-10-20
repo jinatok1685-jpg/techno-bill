@@ -388,30 +388,35 @@ if page == "photo":
         st.markdown("#### 📝 새 증빙 사진 등록")
         shop_names = list(db["shops"].keys())
         post_shop = st.selectbox("점포 선택", shop_names, key="post_shop_select")
-        uploaded_image = st.file_uploader("계량기 사진 업로드 (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"], key="post_img_file")
+        uploaded_images = st.file_uploader("계량기 사진 업로드 (PNG, JPG, JPEG · 최대 4장)", type=["png", "jpg", "jpeg"],
+                                           accept_multiple_files=True, key="post_img_file")
         post_desc = st.text_area("설명 또는 메모 (선택사항)", key="post_desc_input")
 
         submit_post = st.form_submit_button("사진 등록하기")
         if submit_post:
-            if not uploaded_image:
+            if not uploaded_images:
                 st.error("업로드할 계량기 사진을 첨부해주세요.")
+            elif len(uploaded_images) > 4:
+                st.error("사진은 한 번에 4장까지 올릴 수 있습니다.")
             else:
                 now = datetime.now()
                 post_id = now.strftime("%Y%m%d%H%M%S%f")
                 shop_no = shop_names.index(post_shop) + 1
-                photo_path = f"photos/{now.strftime('%Y-%m')}/{post_id}_{shop_no}.jpg"
+                photo_paths = [f"photos/{now.strftime('%Y-%m')}/{post_id}_{shop_no}_{i + 1}.jpg"
+                               for i in range(len(uploaded_images))]
                 new_post = {
                     "id": post_id,
                     "date": now.strftime("%Y-%m-%d %H:%M"),
                     "shop": post_shop,
                     "title": f"{db['config']['month']} 계량기 인증",
-                    "image_name": uploaded_image.name,
-                    "image_path": photo_path,
+                    "image_names": [u.name for u in uploaded_images],
+                    "image_paths": photo_paths,
                     "desc": post_desc,
                 }
                 try:
                     with st.spinner("사진 올리는 중..."):
-                        save_photo(photo_path, shrink_photo(uploaded_image))
+                        for pth, up in zip(photo_paths, uploaded_images):
+                            save_photo(pth, shrink_photo(up))
                         update_data(lambda d, p=new_post: d["posts"].insert(0, p), f"{post_shop} 사진 게시")
                 except Exception as e:
                     st.error(f"사진을 등록하지 못했습니다. 다시 시도해주세요. ({e})")
@@ -431,17 +436,24 @@ if page == "photo":
                 st.markdown(f"#### 📌 [{post['shop']}] {post['title']}")
                 st.caption(f"작성일시: {post['date']} | 점포: {post['shop']}")
 
-                try:
-                    if post.get("image_path"):
-                        img_bytes = load_photo(post["image_path"])
-                    else:
-                        img_bytes = bytes.fromhex(post["image_bytes"])
-                    if img_bytes:
-                        st.image(img_bytes, caption=post.get("image_name", ""), width=350)
-                    else:
-                        st.warning("사진 파일을 찾을 수 없습니다.")
-                except Exception:
-                    st.warning("이미지를 불러오는 중 오류가 발생했습니다.")
+                paths = post.get("image_paths") or ([post["image_path"]] if post.get("image_path") else [])
+                if paths:
+                    img_cols = st.columns(min(len(paths), 2))
+                    for i, pth in enumerate(paths):
+                        with img_cols[i % len(img_cols)]:
+                            try:
+                                img_bytes = load_photo(pth)
+                                if img_bytes:
+                                    st.image(img_bytes, use_container_width=True)
+                                else:
+                                    st.warning("사진 파일을 찾을 수 없습니다.")
+                            except Exception:
+                                st.warning("이미지를 불러오는 중 오류가 발생했습니다.")
+                elif post.get("image_bytes"):
+                    try:
+                        st.image(bytes.fromhex(post["image_bytes"]), width=350)
+                    except Exception:
+                        st.warning("이미지를 불러오는 중 오류가 발생했습니다.")
 
                 if post.get("desc"):
                     st.info(f"메모: {post['desc']}")
@@ -452,8 +464,8 @@ if page == "photo":
                         try:
                             update_data(lambda d, pid=pid: d.__setitem__(
                                 "posts", [p for p in d["posts"] if p.get("id") != pid]), "게시물 삭제")
-                            if post.get("image_path"):
-                                delete_photo(post["image_path"])
+                            for pth in post.get("image_paths") or ([post["image_path"]] if post.get("image_path") else []):
+                                delete_photo(pth)
                         except Exception as e:
                             st.error(f"삭제하지 못했습니다. ({e})")
                         else:
