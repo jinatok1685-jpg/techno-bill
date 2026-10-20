@@ -23,6 +23,11 @@ st.markdown("""
         background-color: #f9fafb;
         color: #374151;
     }
+    [data-testid="InputInstructions"] { display: none; }
+    [data-testid="stForm"] [data-testid="stHorizontalBlock"] { flex-wrap: nowrap; align-items: flex-end; gap: 8px; }
+    [data-testid="stForm"] [data-testid="stHorizontalBlock"] > div { min-width: 0 !important; }
+    [data-testid="stForm"] [data-testid="stHorizontalBlock"] > div:last-child { flex: 0 0 32% !important; }
+    [data-testid="stFormSubmitButton"] > button { height: 2.6em; font-weight: 600; }
     .stButton > button:hover {
         border-color: #3b82f6;
         color: #3b82f6;
@@ -259,17 +264,30 @@ with tab1:
         for idx, shop_name in enumerate(shop_list):
             if st.button(shop_name, key=f"btn_shop_{idx}", use_container_width=True):
                 st.session_state.selected_shop = shop_name
+                st.session_state.step = 1
+                st.session_state.elec_val = float(shops[shop_name]["당월전기"]) or None
+                st.session_state.water_val = float(shops[shop_name]["당월수도"]) or None
                 st.session_state.scroll_top = True
                 st.rerun()
     else:
-        # ── 점포 화면 ──
-        if st.button("← 점포 목록으로", key="back_to_list"):
-            st.session_state.selected_shop = None
-            st.session_state.scroll_top = True
-            st.rerun()
-
+        # ── 점포 화면: 1 전기 → 2 수도 → 3 결과 ──
         selected_shop = st.session_state.selected_shop
         shop_info = shops[selected_shop]
+        step = st.session_state.get("step", 1)
+
+        def go(step_no):
+            st.session_state.step = step_no
+            st.session_state.scroll_top = True
+
+        if step == 2:
+            if st.button("← 전기 다시 입력", key="back_elec"):
+                go(1)
+                st.rerun()
+        elif step == 1:
+            if st.button("← 점포 목록으로", key="back_to_list"):
+                st.session_state.selected_shop = None
+                go(1)
+                st.rerun()
 
         st.markdown(f"""
         <div style="padding: 15px 20px; background-color: #eff6ff; border-left: 6px solid #3b82f6; border-radius: 4px; margin-bottom: 20px;">
@@ -277,78 +295,93 @@ with tab1:
         </div>
         """, unsafe_allow_html=True)
 
-        st.markdown("### ⚡ 전기 계량기")
-        st.info(f"전월 기준 전기 수치: **{shop_info['전월전기']:,.1f} kWh**")
+        prev_e = shop_info["전월전기"]
+        prev_w = shop_info["전월수도"]
 
-        elec_key = f"c_elec_{selected_shop}"
-        if elec_key not in st.session_state:
-            st.session_state[elec_key] = float(shop_info["당월전기"])
-        curr_elec = st.number_input("당월 전기 계량기 수치 입력", step=1.0, format="%.1f", key=elec_key)
-
-        st.markdown("")
-
-        st.markdown("### 💧 수도 계량기")
-        st.info(f"전월 기준 수도 수치: **{shop_info['전월수도']:,.1f} ton**")
-
-        water_key = f"c_water_{selected_shop}"
-        if water_key not in st.session_state:
-            st.session_state[water_key] = float(shop_info["당월수도"])
-        curr_water = st.number_input("당월 수도 계량기 수치 입력", step=1.0, format="%.1f", key=water_key)
-
-        use_elec = round(curr_elec - shop_info["전월전기"], 1)
-        use_water = round(curr_water - shop_info["전월수도"], 1)
-
-        st.markdown("---")
-
-        if curr_elec > 0 or curr_water > 0:
-            invalid_elec = (curr_elec > 0 and use_elec < 0)
-            invalid_water = (curr_water > 0 and use_water < 0)
-
-            if invalid_elec or invalid_water:
-                st.warning("⚠️ 당월 계량기 수치가 전월 기준 수치보다 작습니다. 수치를 확인해주세요.")
-            else:
-                disp_elec = use_elec if curr_elec > 0 else 0.0
-                disp_water = use_water if curr_water > 0 else 0.0
-                st.success(f"📊 당월 사용량 - 전기: {disp_elec:,.1f} kWh / 수도: {disp_water:,.1f} ton")
-
-        if st.button("이번 달 관리비 고지서 계산하기 및 저장", key=f"calc_btn_{selected_shop}"):
-            if curr_elec == 0.0 and curr_water == 0.0:
-                st.error("당월 계량기 수치를 입력해주세요.")
-            elif use_elec < 0 or use_water < 0:
-                st.error("당월 수치가 전월 수치보다 작습니다. 계량기 수치를 확인해주세요.")
-            else:
-                def _set_meter(d, s=selected_shop, e=curr_elec, w=curr_water):
-                    if s in d["shops"]:
-                        d["shops"][s]["당월전기"] = e
-                        d["shops"][s]["당월수도"] = w
-                try:
-                    with st.spinner("저장 중..."):
-                        update_data(_set_meter, f"{selected_shop} 계량기 입력")
-                except Exception as e:
-                    st.error(f"저장하지 못했습니다. 다시 눌러주세요. ({e})")
+        if step == 1:
+            st.markdown("### ⚡ 전기 계량기")
+            st.info(f"전월 기준 전기 수치: **{prev_e:,.1f} kWh**")
+            with st.form(f"elec_form_{selected_shop}"):
+                c_in, c_btn = st.columns([3, 1])
+                with c_in:
+                    v = st.number_input("당월 전기 계량기 수치 입력", value=st.session_state.get("elec_val"),
+                                        step=1.0, format="%.1f")
+                with c_btn:
+                    ok = st.form_submit_button("↵ 다음", use_container_width=True)
+            if ok:
+                if v is None:
+                    st.error("전기 계량기 수치를 입력해주세요.")
+                elif v < prev_e:
+                    st.error("⚠️ 당월 전기 수치가 전월 기준 수치보다 작습니다. 수치를 확인해주세요.")
                 else:
-                    f = calc_fee(selected_shop, use_elec, use_water, n)
+                    st.session_state.elec_val = v
+                    go(2)
+                    st.rerun()
 
-                    st.markdown("---")
-                    st.success(f"📢 {selected_shop}님의 {cfg['month']} 총 청구금액: {f['total']:,.0f} 원")
-                    st.info(f"입금계좌: {cfg['account']}")
+        elif step == 2:
+            st.success(f"⚡ 전기: {st.session_state.elec_val:,.1f} kWh (사용량 {st.session_state.elec_val - prev_e:,.1f} kWh)")
+            st.markdown("### 💧 수도 계량기")
+            st.info(f"전월 기준 수도 수치: **{prev_w:,.1f} ton**")
+            with st.form(f"water_form_{selected_shop}"):
+                c_in, c_btn = st.columns([3, 1])
+                with c_in:
+                    v = st.number_input("당월 수도 계량기 수치 입력", value=st.session_state.get("water_val"),
+                                        step=1.0, format="%.1f")
+                with c_btn:
+                    ok = st.form_submit_button("↵ 결과 보기", use_container_width=True)
+            if ok:
+                if v is None:
+                    st.error("수도 계량기 수치를 입력해주세요.")
+                elif v < prev_w:
+                    st.error("⚠️ 당월 수도 수치가 전월 기준 수치보다 작습니다. 수치를 확인해주세요.")
+                else:
+                    e_val = st.session_state.elec_val
 
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.markdown("### 전기 및 수도 요금")
-                        st.write(f"- **전기세**: {f['indiv_elec_fee']:,.0f}원")
-                        st.caption(f"  (사용량 {use_elec:,.1f}kWh × 140원 + 공용전기 75,000원 + 기본전기 {f['base_elec_share']:,.0f}원)")
+                    def _set_meter(d, s=selected_shop, e=e_val, w=v):
+                        if s in d["shops"]:
+                            d["shops"][s]["당월전기"] = e
+                            d["shops"][s]["당월수도"] = w
+                    try:
+                        with st.spinner("저장 중..."):
+                            update_data(_set_meter, f"{selected_shop} 계량기 입력")
+                    except Exception as e:
+                        st.error(f"저장하지 못했습니다. 다시 눌러주세요. ({e})")
+                    else:
+                        st.session_state.water_val = v
+                        go(3)
+                        st.rerun()
 
-                        st.write(f"- **수도세**: {f['indiv_water_fee']:,.0f}원")
-                        st.caption(f"  (사용량 {use_water:,.1f}톤 × 3,000원 + 공용수도 13,000원)")
+        else:
+            curr_elec = st.session_state.elec_val
+            curr_water = st.session_state.water_val
+            use_elec = round(curr_elec - prev_e, 1)
+            use_water = round(curr_water - prev_w, 1)
+            f = calc_fee(selected_shop, use_elec, use_water, n)
 
-                    with c2:
-                        st.markdown("### 기타 공용 관리비 분담 항목")
-                        jump_text = " (점핑 +50,000원 포함)" if f["is_jump"] else ""
-                        st.write(f"- 엘리베이터 요금: {f['elevator_fee']:,.0f}원{jump_text}")
-                        st.write(f"- 태동환경: {f['taedong_fee']:,.0f}원")
-                        st.write(f"- 수선예비비: {f['repair_reserve']:,.0f}원")
-                        st.write(f"- 대한전기: {f['daehan_elec_fee']:,.0f}원")
+            st.success(f"📊 당월 사용량 - 전기: {use_elec:,.1f} kWh / 수도: {use_water:,.1f} ton")
+            st.success(f"📢 {selected_shop}님의 {cfg['month']} 총 청구금액: {f['total']:,.0f} 원")
+            st.info(f"입금계좌: {cfg['account']}")
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("### 전기 및 수도 요금")
+                st.write(f"- **전기세**: {f['indiv_elec_fee']:,.0f}원")
+                st.caption(f"  (사용량 {use_elec:,.1f}kWh × 140원 + 공용전기 75,000원 + 기본전기 {f['base_elec_share']:,.0f}원)")
+                st.write(f"- **수도세**: {f['indiv_water_fee']:,.0f}원")
+                st.caption(f"  (사용량 {use_water:,.1f}톤 × 3,000원 + 공용수도 13,000원)")
+            with c2:
+                st.markdown("### 기타 공용 관리비 분담 항목")
+                jump_text = " (점핑 +50,000원 포함)" if f["is_jump"] else ""
+                st.write(f"- 엘리베이터 요금: {f['elevator_fee']:,.0f}원{jump_text}")
+                st.write(f"- 태동환경: {f['taedong_fee']:,.0f}원")
+                st.write(f"- 수선예비비: {f['repair_reserve']:,.0f}원")
+                st.write(f"- 대한전기: {f['daehan_elec_fee']:,.0f}원")
+
+            st.markdown("---")
+            if st.button("← 점포 목록으로", key="back_to_list_end"):
+                st.session_state.selected_shop = None
+                go(1)
+                st.rerun()
 
 with tab2:
     st.subheader(f"📷 {db['config']['month']} 계량기 증빙 사진 게시판")
