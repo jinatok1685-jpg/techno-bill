@@ -340,8 +340,13 @@ if page == "fee":
             use_water = round(curr_water - prev_w, 1)
             f = calc_fee(selected_shop, use_elec, use_water, n)
 
+            st.markdown(f"""
+            <div style="padding:18px 20px; background:#fff7ed; border:2px solid #fb923c; border-radius:12px; margin-bottom:16px; text-align:center;">
+                <div style="color:#9a3412; font-size:1em; font-weight:600;">{selected_shop} · {cfg['month']} 관리비</div>
+                <div style="color:#dc2626; font-size:2.6em; font-weight:800; line-height:1.3;">{f['total']:,.0f}원</div>
+            </div>
+            """, unsafe_allow_html=True)
             st.success(f"📊 당월 사용량 - 전기: {use_elec:,.1f} kWh / 수도: {use_water:,.1f} ton")
-            st.success(f"📢 {selected_shop}님의 {cfg['month']} 총 청구금액: {f['total']:,.0f} 원")
             st.info(f"입금계좌: {cfg['account']}")
 
             c1, c2 = st.columns(2)
