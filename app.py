@@ -1,8 +1,13 @@
 import streamlit as st
 import json
 import os
+import io
+import time
+import base64
+import requests
 import pandas as pd
 from datetime import datetime
+from PIL import Image, ImageOps
 
 st.set_page_config(page_title="테크노푸드몰", layout="wide")
 
@@ -24,7 +29,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-DATA_FILE = "data.json"
+DATA_PATH = "data.json"
 
 DEFAULT_SHOPS = {
     "지하105-3호 바른푸드(쌀국수)": {"전월전기": 123243.4, "전월수도": 1549.0, "당월전기": 0.0, "당월수도": 0.0},
@@ -38,37 +43,184 @@ DEFAULT_SHOPS = {
 DEFAULT_CONFIG = {
     "month": "10월",
     "n_shops": 6,
-    "account": "카카오뱅크 7942-07-89864 (예금주: 하기수)",
+    "account": "관리자 설정에서 입금 계좌를 입력해주세요",
     "admin_password": "1234"
 }
 
-def load_data():
-    if os.path.exists(DATA_FILE):
+
+# ───────────── 저장소 (GitHub 비공개 저장소 / 없으면 서버 파일) ─────────────
+def _secret(name):
+    try:
+        return st.secrets.get(name, "")
+    except Exception:
+        return ""
+
+
+TOKEN = _secret("GITHUB_TOKEN")
+REPO = _secret("DATA_REPO")
+USE_GH = bool(TOKEN and REPO)
+API = f"https://api.github.com/repos/{REPO}/contents/"
+HEAD = {
+    "Authorization": f"Bearer {TOKEN}",
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+}
+
+
+class Conflict(Exception):
+    pass
+
+
+def gh_get(path):
+    r = requests.get(API + path, headers=HEAD, timeout=15)
+    if r.status_code == 404:
+        return None, None
+    r.raise_for_status()
+    j = r.json()
+    return base64.b64decode(j["content"]), j["sha"]
+
+
+def gh_put(path, raw, sha, msg):
+    body = {"message": msg, "content": base64.b64encode(raw).decode()}
+    if sha:
+        body["sha"] = sha
+    r = requests.put(API + path, headers=HEAD, json=body, timeout=30)
+    if r.status_code in (409, 422):
+        raise Conflict()
+    r.raise_for_status()
+
+
+def normalize(data):
+    data.setdefault("shops", json.loads(json.dumps(DEFAULT_SHOPS)))
+    data.setdefault("config", dict(DEFAULT_CONFIG))
+    data.setdefault("posts", [])
+    for shop in data["shops"].values():
+        shop.setdefault("당월전기", 0.0)
+        shop.setdefault("당월수도", 0.0)
+    for k, v in DEFAULT_CONFIG.items():
+        data["config"].setdefault(k, v)
+    return data
+
+
+def read_raw():
+    if USE_GH:
+        raw, sha = gh_get(DATA_PATH)
+    else:
+        raw, sha = None, None
+        if os.path.exists(DATA_PATH):
+            with open(DATA_PATH, "rb") as f:
+                raw = f.read()
+    if raw is None:
+        data = {}
+    else:
         try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                for shop in data.get("shops", {}):
-                    if "당월전기" not in data["shops"][shop]:
-                        data["shops"][shop]["당월전기"] = 0.0
-                    if "당월수도" not in data["shops"][shop]:
-                        data["shops"][shop]["당월수도"] = 0.0
-                if "config" in data and "admin_password" not in data["config"]:
-                    data["config"]["admin_password"] = "1234"
-                if "posts" not in data:
-                    data["posts"] = []
-                return data
+            data = json.loads(raw.decode("utf-8"))
         except Exception:
-            pass
-    return {"shops": DEFAULT_SHOPS, "config": DEFAULT_CONFIG, "posts": []}
+            data = {}
+    return normalize(data), sha
 
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
 
-if "db" not in st.session_state:
-    st.session_state.db = load_data()
+@st.cache_data(ttl=60, show_spinner=False)
+def load_data():
+    return read_raw()[0]
 
-db = st.session_state.db
+
+def update_data(mutate, msg):
+    """저장 직전에 최신 데이터를 다시 읽고, 바꿀 부분만 바꿔서 저장 (동시 저장 대비)"""
+    for i in range(4):
+        data, sha = read_raw()
+        mutate(data)
+        raw = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        try:
+            if USE_GH:
+                gh_put(DATA_PATH, raw, sha, msg)
+            else:
+                with open(DATA_PATH, "wb") as f:
+                    f.write(raw)
+            load_data.clear()
+            return data
+        except Conflict:
+            time.sleep(1 + i)
+    raise RuntimeError("다른 분과 동시에 저장되어 실패했습니다. 다시 눌러주세요.")
+
+
+def shrink_photo(file):
+    img = Image.open(file)
+    img = ImageOps.exif_transpose(img).convert("RGB")
+    img.thumbnail((1280, 1280))
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=70, optimize=True)
+    return buf.getvalue()
+
+
+def save_photo(path, raw):
+    if USE_GH:
+        gh_put(path, raw, None, f"사진 등록 {path}")
+    else:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(raw)
+
+
+@st.cache_data(show_spinner=False)
+def load_photo(path):
+    if USE_GH:
+        return gh_get(path)[0]
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            return f.read()
+    return None
+
+
+def delete_photo(path):
+    try:
+        if USE_GH:
+            _, sha = gh_get(path)
+            if sha:
+                requests.delete(API + path, headers=HEAD,
+                                json={"message": f"사진 삭제 {path}", "sha": sha}, timeout=15)
+        elif os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
+# ───────────── 요금 계산 (한 곳에서만) ─────────────
+def calc_fee(shop_name, use_elec, use_water, n):
+    base_elec_share = 750000 / n
+    public_elec_fee = 75000
+    indiv_elec_fee = (use_elec * 140.0) + public_elec_fee + base_elec_share
+
+    public_water_fee = 13000
+    indiv_water_fee = (use_water * 3000.0) + public_water_fee
+
+    is_jump = "점핑" in shop_name
+    base_elevator = 70000 / n
+    elevator_fee = base_elevator + 50000 if is_jump else base_elevator
+    taedong_fee = 370000 / n
+    repair_reserve = 10000
+    daehan_elec_fee = 231000 / n
+
+    fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
+    return {
+        "base_elec_share": base_elec_share,
+        "indiv_elec_fee": indiv_elec_fee,
+        "indiv_water_fee": indiv_water_fee,
+        "elevator_fee": elevator_fee,
+        "taedong_fee": taedong_fee,
+        "repair_reserve": repair_reserve,
+        "daehan_elec_fee": daehan_elec_fee,
+        "is_jump": is_jump,
+        "total": indiv_elec_fee + indiv_water_fee + fixed_sum,
+    }
+
+
+# ───────────── 데이터 불러오기 ─────────────
+try:
+    db = load_data()
+except Exception as e:
+    st.error(f"데이터를 불러오지 못했습니다. 잠시 후 새로고침해주세요. ({e})")
+    st.stop()
 
 if "admin_auth" not in st.session_state:
     st.session_state.admin_auth = False
@@ -85,9 +237,9 @@ with tab1:
 
     st.subheader(f"{cfg['month']} 관리비 조회")
     st.markdown("##### 🏪 본인의 점포를 **클릭하여** 선택해주세요")
-    
+
     shop_list = list(shops.keys())
-    
+
     if "selected_shop" not in st.session_state or st.session_state.selected_shop not in shop_list:
         st.session_state.selected_shop = shop_list[0]
 
@@ -95,144 +247,136 @@ with tab1:
     for idx, shop_name in enumerate(shop_list):
         with cols[idx]:
             is_selected = (st.session_state.selected_shop == shop_name)
-            if is_selected:
-                btn_label = f"👉 [ {shop_name} ]"
-            else:
-                btn_label = shop_name
-                
+            btn_label = f"👉 [ {shop_name} ]" if is_selected else shop_name
             if st.button(btn_label, key=f"btn_shop_{idx}", use_container_width=True):
                 st.session_state.selected_shop = shop_name
                 st.rerun()
 
     selected_shop = st.session_state.selected_shop
     shop_info = shops[selected_shop]
-    
+
     st.markdown("---")
     st.markdown(f"""
     <div style="padding: 15px 20px; background-color: #eff6ff; border-left: 6px solid #3b82f6; border-radius: 4px; margin-bottom: 20px;">
         <h3 style="margin: 0; color: #1e40af;">🔍 현재 선택된 점포: {selected_shop}</h3>
     </div>
     """, unsafe_allow_html=True)
-    
+
     st.markdown("### ⚡ 전기 계량기")
     st.info(f"전월 기준 전기 수치: **{shop_info['전월전기']:,.1f} kWh**")
-    
+
     elec_key = f"c_elec_{selected_shop}"
     if elec_key not in st.session_state:
         st.session_state[elec_key] = float(shop_info["당월전기"])
-        
-    curr_elec = st.number_input("당월 전기 계량기 수치 입력", value=float(shop_info["당월전기"]), step=1.0, format="%.1f", key=elec_key)
-    
+    curr_elec = st.number_input("당월 전기 계량기 수치 입력", step=1.0, format="%.1f", key=elec_key)
+
     st.markdown("")
-    
+
     st.markdown("### 💧 수도 계량기")
     st.info(f"전월 기준 수도 수치: **{shop_info['전월수도']:,.1f} ton**")
-    
+
     water_key = f"c_water_{selected_shop}"
     if water_key not in st.session_state:
         st.session_state[water_key] = float(shop_info["당월수도"])
-        
-    curr_water = st.number_input("당월 수도 계량기 수치 입력", value=float(shop_info["당월수도"]), step=1.0, format="%.1f", key=water_key)
-        
+    curr_water = st.number_input("당월 수도 계량기 수치 입력", step=1.0, format="%.1f", key=water_key)
+
     use_elec = round(curr_elec - shop_info["전월전기"], 1)
     use_water = round(curr_water - shop_info["전월수도"], 1)
-    
+
     st.markdown("---")
-    
+
     if curr_elec > 0 or curr_water > 0:
         invalid_elec = (curr_elec > 0 and use_elec < 0)
         invalid_water = (curr_water > 0 and use_water < 0)
-        
+
         if invalid_elec or invalid_water:
             st.warning("⚠️ 당월 계량기 수치가 전월 기준 수치보다 작습니다. 수치를 확인해주세요.")
         else:
             disp_elec = use_elec if curr_elec > 0 else 0.0
             disp_water = use_water if curr_water > 0 else 0.0
             st.success(f"📊 당월 사용량 - 전기: {disp_elec:,.1f} kWh / 수도: {disp_water:,.1f} ton")
-        
+
     if st.button("이번 달 관리비 고지서 계산하기 및 저장", key=f"calc_btn_{selected_shop}"):
         if curr_elec == 0.0 and curr_water == 0.0:
             st.error("당월 계량기 수치를 입력해주세요.")
         elif use_elec < 0 or use_water < 0:
             st.error("당월 수치가 전월 수치보다 작습니다. 계량기 수치를 확인해주세요.")
         else:
-            db["shops"][selected_shop]["당월전기"] = curr_elec
-            db["shops"][selected_shop]["당월수도"] = curr_water
-            save_data(db)
-            
-            base_elec_share = 750000 / n
-            public_elec_fee = 75000
-            indiv_elec_fee = (use_elec * 140.0) + public_elec_fee + base_elec_share
-            
-            public_water_fee = 13000
-            indiv_water_fee = (use_water * 3000.0) + public_water_fee
-            
-            base_elevator = 70000 / n
-            elevator_fee = base_elevator + 50000 if "점핑" in selected_shop else base_elevator
-            taedong_fee = 370000 / n
-            repair_reserve = 10000
-            daehan_elec_fee = 231000 / n
-            
-            fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
-            total_fee = indiv_elec_fee + indiv_water_fee + fixed_sum
-            
-            st.markdown("---")
-            st.success(f"📢 {selected_shop}님의 {cfg['month']} 총 청구금액: {total_fee:,.0f} 원")
-            st.info(f"입금계좌: {cfg['account']}")
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("### 전기 및 수도 요금")
-                st.write(f"- **전기세**: {indiv_elec_fee:,.0f}원")
-                st.caption(f"  (사용량 {use_elec:,.1f}kWh × 140원 + 공용전기 75,000원 + 기본전기 {base_elec_share:,.0f}원)")
-                
-                st.write(f"- **수도세**: {indiv_water_fee:,.0f}원")
-                st.caption(f"  (사용량 {use_water:,.1f}톤 × 3,000원 + 공용수도 13,000원)")
-            
-            with c2:
-                st.markdown("### 기타 공용 관리비 분담 항목")
-                jump_text = " (점핑 +50,000원 포함)" if "점핑" in selected_shop else ""
-                st.write(f"- 엘리베이터 요금: {elevator_fee:,.0f}원{jump_text}")
-                st.write(f"- 태동환경: {taedong_fee:,.0f}원")
-                st.write(f"- 수선예비비: {repair_reserve:,.0f}원")
-                st.write(f"- 대한전기: {daehan_elec_fee:,.0f}원")
+            def _set_meter(d, s=selected_shop, e=curr_elec, w=curr_water):
+                if s in d["shops"]:
+                    d["shops"][s]["당월전기"] = e
+                    d["shops"][s]["당월수도"] = w
+            try:
+                with st.spinner("저장 중..."):
+                    update_data(_set_meter, f"{selected_shop} 계량기 입력")
+            except Exception as e:
+                st.error(f"저장하지 못했습니다. 다시 눌러주세요. ({e})")
+            else:
+                f = calc_fee(selected_shop, use_elec, use_water, n)
+
+                st.markdown("---")
+                st.success(f"📢 {selected_shop}님의 {cfg['month']} 총 청구금액: {f['total']:,.0f} 원")
+                st.info(f"입금계좌: {cfg['account']}")
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("### 전기 및 수도 요금")
+                    st.write(f"- **전기세**: {f['indiv_elec_fee']:,.0f}원")
+                    st.caption(f"  (사용량 {use_elec:,.1f}kWh × 140원 + 공용전기 75,000원 + 기본전기 {f['base_elec_share']:,.0f}원)")
+
+                    st.write(f"- **수도세**: {f['indiv_water_fee']:,.0f}원")
+                    st.caption(f"  (사용량 {use_water:,.1f}톤 × 3,000원 + 공용수도 13,000원)")
+
+                with c2:
+                    st.markdown("### 기타 공용 관리비 분담 항목")
+                    jump_text = " (점핑 +50,000원 포함)" if f["is_jump"] else ""
+                    st.write(f"- 엘리베이터 요금: {f['elevator_fee']:,.0f}원{jump_text}")
+                    st.write(f"- 태동환경: {f['taedong_fee']:,.0f}원")
+                    st.write(f"- 수선예비비: {f['repair_reserve']:,.0f}원")
+                    st.write(f"- 대한전기: {f['daehan_elec_fee']:,.0f}원")
 
 with tab2:
     st.subheader(f"📷 {db['config']['month']} 계량기 증빙 사진 게시판")
     st.caption("점주님들께서 입력하신 계량기 수치의 증빙 사진을 업로드하고 다른 점주님들과 공유하는 공간입니다.")
-    
+
     with st.form("upload_form", clear_on_submit=True):
         st.markdown("#### 📝 새 증빙 사진 등록")
-        post_shop = st.selectbox("점포 선택", list(db["shops"].keys()), key="post_shop_select")
+        shop_names = list(db["shops"].keys())
+        post_shop = st.selectbox("점포 선택", shop_names, key="post_shop_select")
         uploaded_image = st.file_uploader("계량기 사진 업로드 (PNG, JPG, JPEG)", type=["png", "jpg", "jpeg"], key="post_img_file")
         post_desc = st.text_area("설명 또는 메모 (선택사항)", key="post_desc_input")
-        
+
         submit_post = st.form_submit_button("사진 등록하기")
         if submit_post:
             if not uploaded_image:
                 st.error("업로드할 계량기 사진을 첨부해주세요.")
             else:
-                if "posts" not in db:
-                    db["posts"] = []
-                
-                auto_title = f"{db['config']['month']} 계량기 인증"
+                now = datetime.now()
+                post_id = now.strftime("%Y%m%d%H%M%S%f")
+                shop_no = shop_names.index(post_shop) + 1
+                photo_path = f"photos/{now.strftime('%Y-%m')}/{post_id}_{shop_no}.jpg"
                 new_post = {
-                    "id": datetime.now().strftime("%Y%m%d%H%M%S"),
-                    "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "id": post_id,
+                    "date": now.strftime("%Y-%m-%d %H:%M"),
                     "shop": post_shop,
-                    "title": auto_title,
+                    "title": f"{db['config']['month']} 계량기 인증",
                     "image_name": uploaded_image.name,
-                    "image_bytes": uploaded_image.getvalue().hex(),
-                    "desc": post_desc
+                    "image_path": photo_path,
+                    "desc": post_desc,
                 }
-                db["posts"].insert(0, new_post)
-                save_data(db)
-                st.success("계량기 증빙 사진이 성공적으로 등록되었습니다!")
-                st.rerun()
+                try:
+                    with st.spinner("사진 올리는 중..."):
+                        save_photo(photo_path, shrink_photo(uploaded_image))
+                        update_data(lambda d, p=new_post: d["posts"].insert(0, p), f"{post_shop} 사진 게시")
+                except Exception as e:
+                    st.error(f"사진을 등록하지 못했습니다. 다시 시도해주세요. ({e})")
+                else:
+                    st.success("계량기 증빙 사진이 성공적으로 등록되었습니다!")
+                    st.rerun()
 
     st.markdown("---")
     st.markdown("### 📋 등록된 증빙 사진 목록")
-    
+
     posts = db.get("posts", [])
     if not posts:
         st.info("등록된 계량기 증빙 사진이 없습니다. 첫 번째 인증 사진을 등록해보세요!")
@@ -241,23 +385,36 @@ with tab2:
             with st.container():
                 st.markdown(f"#### 📌 [{post['shop']}] {post['title']}")
                 st.caption(f"작성일시: {post['date']} | 점포: {post['shop']}")
-                
+
                 try:
-                    img_bytes = bytes.fromhex(post["image_bytes"])
-                    st.image(img_bytes, caption=post['image_name'], width=350)
+                    if post.get("image_path"):
+                        img_bytes = load_photo(post["image_path"])
+                    else:
+                        img_bytes = bytes.fromhex(post["image_bytes"])
+                    if img_bytes:
+                        st.image(img_bytes, caption=post.get("image_name", ""), width=350)
+                    else:
+                        st.warning("사진 파일을 찾을 수 없습니다.")
                 except Exception:
                     st.warning("이미지를 불러오는 중 오류가 발생했습니다.")
-                
+
                 if post.get("desc"):
                     st.info(f"메모: {post['desc']}")
-                
+
                 if st.session_state.get("admin_auth", False):
-                    if st.button(f"🗑️ 이 게시물 삭제 (관리자용)", key=f"del_post_{post['id']}_{idx}"):
-                        db["posts"].remove(post)
-                        save_data(db)
-                        st.success("게시물이 삭제되었습니다.")
-                        st.rerun()
-                
+                    if st.button("🗑️ 이 게시물 삭제 (관리자용)", key=f"del_post_{post['id']}_{idx}"):
+                        pid = post["id"]
+                        try:
+                            update_data(lambda d, pid=pid: d.__setitem__(
+                                "posts", [p for p in d["posts"] if p.get("id") != pid]), "게시물 삭제")
+                            if post.get("image_path"):
+                                delete_photo(post["image_path"])
+                        except Exception as e:
+                            st.error(f"삭제하지 못했습니다. ({e})")
+                        else:
+                            st.success("게시물이 삭제되었습니다.")
+                            st.rerun()
+
                 st.markdown("---")
 
 with tab3:
@@ -270,14 +427,18 @@ with tab3:
         st.markdown("🔒 **관리자 모드 접근을 위해 비밀번호를 입력해주세요.**")
         input_pw = st.text_input("비밀번호", type="password", key="admin_pw_input")
         if st.button("로그인", key="admin_login_btn"):
-            correct_pw = cfg.get("admin_password", "1234")
-            if input_pw == correct_pw:
+            if input_pw == cfg.get("admin_password", "1234"):
                 st.session_state.admin_auth = True
                 st.success("로그인 성공!")
                 st.rerun()
             else:
                 st.error("비밀번호가 올바르지 않습니다.")
     else:
+        if USE_GH:
+            st.success("✅ 데이터와 사진이 GitHub 비공개 저장소에 저장되고 있습니다.")
+        else:
+            st.warning("⚠️ GitHub 저장소가 연결되지 않아 서버에 임시 저장 중입니다. Secrets 설정을 확인해주세요.")
+
         if st.button("🚪 관리자 로그아웃", key="admin_logout_btn"):
             st.session_state.admin_auth = False
             st.rerun()
@@ -288,68 +449,51 @@ with tab3:
         n_s = st.number_input("점포 수 (n)", value=int(cfg["n_shops"]), min_value=1, key="cfg_n_input")
         acc = st.text_input("입금 계좌 안내", value=cfg["account"], key="cfg_acc_input")
         new_pw = st.text_input("새 관리자 비밀번호 변경 (변경시에만 입력)", type="password", key="cfg_new_pw")
-            
+
         if st.button("기본 설정 저장하기", key="save_cfg_btn"):
-            updated_pw = new_pw if new_pw.strip() != "" else cfg.get("admin_password", "1234")
-            db["config"] = {
-                "month": m,
-                "n_shops": int(n_s),
-                "account": acc,
-                "admin_password": updated_pw
-            }
-            save_data(db)
-            st.success("기본 설정 및 비밀번호가 저장되었습니다!")
-            st.rerun()
+            def _set_cfg(d, m=m, n_s=n_s, acc=acc, new_pw=new_pw):
+                d["config"]["month"] = m
+                d["config"]["n_shops"] = int(n_s)
+                d["config"]["account"] = acc
+                if new_pw.strip() != "":
+                    d["config"]["admin_password"] = new_pw
+            try:
+                update_data(_set_cfg, "기본 설정 변경")
+            except Exception as e:
+                st.error(f"저장하지 못했습니다. ({e})")
+            else:
+                st.success("기본 설정 및 비밀번호가 저장되었습니다!")
+                st.rerun()
 
         st.markdown("---")
         st.markdown("### 2. 📊 이번 달 전체 점포 현황 및 기준 수치 수정")
         st.caption("각 점포의 **'전월 전기'와 '전월 수도' 수치를 직접 수정**하실 수 있으며, 당월 입력 현황과 총 관리비를 한눈에 확인할 수 있습니다.")
-        
-        updated_shops = {}
+
+        new_prev = {}
         summary_data = []
-        
+
         for shop_name, vals in shops.items():
             st.markdown(f"**📌 {shop_name}**")
             col_e, col_w, col_info = st.columns([1, 1, 2])
-            
+
             with col_e:
                 pe = st.number_input("전월 전기 (kWh)", value=float(vals["전월전기"]), step=1.0, format="%.1f", key=f"adm_pe_{shop_name}")
             with col_w:
                 pw = st.number_input("전월 수도 (ton)", value=float(vals["전월수도"]), step=1.0, format="%.1f", key=f"adm_pw_{shop_name}")
-                
-            updated_shops[shop_name] = {
-                "전월전기": pe, 
-                "전월수도": pw,
-                "당월전기": vals.get("당월전기", 0.0),
-                "당월수도": vals.get("당월수도", 0.0)
-            }
-            
+
+            new_prev[shop_name] = (pe, pw)
+
             c_e = vals.get("당월전기", 0.0)
             c_w = vals.get("당월수도", 0.0)
-            
+
             u_e = round(c_e - pe, 1) if c_e > 0 else 0.0
             u_w = round(c_w - pw, 1) if c_w > 0 else 0.0
-            
+
             if c_e > 0 and u_e >= 0 and c_w > 0 and u_w >= 0:
-                base_elec_share = 750000 / n
-                public_elec_fee = 75000
-                indiv_elec_fee = (u_e * 140.0) + public_elec_fee + base_elec_share
-                
-                public_water_fee = 13000
-                indiv_water_fee = (u_w * 3000.0) + public_water_fee
-                
-                base_elevator = 70000 / n
-                elevator_fee = base_elevator + 50000 if "점핑" in shop_name else base_elevator
-                taedong_fee = 370000 / n
-                repair_reserve = 10000
-                daehan_elec_fee = 231000 / n
-                
-                fixed_sum = elevator_fee + taedong_fee + repair_reserve + daehan_elec_fee
-                total_fee = indiv_elec_fee + indiv_water_fee + fixed_sum
-                fee_str = f"{total_fee:,.0f} 원"
+                fee_str = f"{calc_fee(shop_name, u_e, u_w, n)['total']:,.0f} 원"
             else:
                 fee_str = "미입력 또는 계산 전"
-                
+
             summary_data.append({
                 "점포명": shop_name,
                 "당월 전기": f"{c_e:,.1f}" if c_e > 0 else "-",
@@ -361,10 +505,18 @@ with tab3:
             st.markdown("")
 
         if st.button("수정된 기준 수치 및 전체 현황 저장", key="save_shops_btn"):
-            db["shops"] = updated_shops
-            save_data(db)
-            st.success("점포 기준 수치가 성공적으로 업데이트되었습니다!")
-            st.rerun()
+            def _set_prev(d, new_prev=new_prev):
+                for s, (pe, pw) in new_prev.items():
+                    if s in d["shops"]:
+                        d["shops"][s]["전월전기"] = pe
+                        d["shops"][s]["전월수도"] = pw
+            try:
+                update_data(_set_prev, "전월 기준 수치 수정")
+            except Exception as e:
+                st.error(f"저장하지 못했습니다. ({e})")
+            else:
+                st.success("점포 기준 수치가 성공적으로 업데이트되었습니다!")
+                st.rerun()
 
         st.markdown("---")
         st.markdown("### 📋 당월 입력 및 요금 요약 표")
@@ -382,9 +534,17 @@ with tab3:
 
         st.markdown("")
         if st.button("🔄 모든 점포 당월 입력 상태 초기화하기 (미입력으로 되돌리기)", key="reset_inputs_btn"):
-            for shop_name in shops.keys():
-                db["shops"][shop_name]["당월전기"] = 0.0
-                db["shops"][shop_name]["당월수도"] = 0.0
-            save_data(db)
-            st.success("모든 점포의 당월 입력값이 초기화되었습니다!")
-            st.rerun()
+            def _reset(d):
+                for s in d["shops"]:
+                    d["shops"][s]["당월전기"] = 0.0
+                    d["shops"][s]["당월수도"] = 0.0
+            try:
+                update_data(_reset, "당월 입력 초기화")
+            except Exception as e:
+                st.error(f"초기화하지 못했습니다. ({e})")
+            else:
+                for k in list(st.session_state.keys()):
+                    if k.startswith("c_elec_") or k.startswith("c_water_"):
+                        del st.session_state[k]
+                st.success("모든 점포의 당월 입력값이 초기화되었습니다!")
+                st.rerun()
