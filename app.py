@@ -277,22 +277,6 @@ if page == "fee":
             st.session_state.step = step_no
             st.session_state.scroll_top = True
 
-        if step == 2:
-            if st.button("← 전기 다시 입력", key="back_elec"):
-                go(1)
-                st.rerun()
-        elif step == 1:
-            if st.button("← 점포 목록으로", key="back_to_list"):
-                st.session_state.selected_shop = None
-                go(1)
-                st.rerun()
-
-        st.markdown(f"""
-        <div style="padding: 15px 20px; background-color: #eff6ff; border-left: 6px solid #3b82f6; border-radius: 4px; margin-bottom: 20px;">
-            <h3 style="margin: 0; color: #1e40af;">🔍 현재 선택된 점포: {selected_shop}</h3>
-        </div>
-        """, unsafe_allow_html=True)
-
         prev_e = shop_info["전월전기"]
         prev_w = shop_info["전월수도"]
 
@@ -375,8 +359,18 @@ if page == "fee":
                 st.write(f"- 수선예비비: {f['repair_reserve']:,.0f}원")
                 st.write(f"- 대한전기: {f['daehan_elec_fee']:,.0f}원")
 
-            st.markdown("---")
-            if st.button("← 점포 목록으로", key="back_to_list_end"):
+        # ── 아래쪽: 점포 이름 + 돌아가기 ──
+        st.markdown("---")
+        st.markdown(f"<div style='padding:8px 12px; background:#eff6ff; border-left:4px solid #3b82f6; "
+                    f"border-radius:4px; color:#1e40af; font-weight:600;'>🔍 {selected_shop}</div>",
+                    unsafe_allow_html=True)
+        st.markdown("")
+        if step == 2:
+            if st.button("← 전기 다시 입력", key="back_elec"):
+                go(1)
+                st.rerun()
+        else:
+            if st.button("← 점포 목록으로", key="back_to_list"):
                 st.session_state.selected_shop = None
                 go(1)
                 st.rerun()
