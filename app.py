@@ -7,7 +7,7 @@ import time
 import base64
 import requests
 import pandas as pd
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from PIL import Image, ImageOps
 
 st.set_page_config(page_title="테크노푸드몰", layout="wide")
@@ -75,16 +75,6 @@ HEAD = {
 
 class Conflict(Exception):
     pass
-
-
-KST = timezone(timedelta(hours=9))     # Streamlit 서버는 세계 표준시(UTC)라 한국 시간으로 맞춤
-
-
-def next_month(m):
-    """'10월' → '11월', '12월' → '1월' (숫자를 못 찾으면 그대로)"""
-    import re
-    x = re.search(r"(\d+)", str(m))
-    return f"{int(x.group(1)) % 12 + 1}월" if x else m
 
 
 def gh_get(path):
@@ -258,7 +248,7 @@ if st.session_state.pop("scroll_top", False):
 if page == "fee":
     cfg = db["config"]
     shops = db["shops"]
-    n = len(shops) or 1          # 점포 수 = 점포 목록 개수 (자동)
+    n = cfg["n_shops"] if cfg["n_shops"] > 0 else 1
 
     shop_list = list(shops.keys())
 
@@ -409,7 +399,7 @@ if page == "photo":
             elif len(uploaded_images) > 4:
                 st.error("사진은 한 번에 4장까지 올릴 수 있습니다.")
             else:
-                now = datetime.now(KST)
+                now = datetime.now()
                 post_id = now.strftime("%Y%m%d%H%M%S%f")
                 shop_no = shop_names.index(post_shop) + 1
                 photo_paths = [f"photos/{now.strftime('%Y-%m')}/{post_id}_{shop_no}_{i + 1}.jpg"
@@ -488,7 +478,7 @@ if page == "admin":
     st.subheader("관리자 설정")
     cfg = db["config"]
     shops = db["shops"]
-    n = len(shops) or 1          # 점포 수 = 점포 목록 개수 (자동)
+    n = cfg["n_shops"] if cfg["n_shops"] > 0 else 1
 
     if not st.session_state.admin_auth:
         st.markdown("🔒 **관리자 모드 접근을 위해 비밀번호를 입력해주세요.**")
@@ -513,14 +503,14 @@ if page == "admin":
         st.markdown("---")
         st.markdown("### 1. 기본 설정 (정산 월, 계좌 및 비밀번호)")
         m = st.text_input("정산 월", value=cfg["month"], key="cfg_month_input")
-        st.caption(f"점포 수: {n}개 (점포 목록에서 자동으로 계산해요)")
+        n_s = st.number_input("점포 수 (n)", value=int(cfg["n_shops"]), min_value=1, key="cfg_n_input")
         acc = st.text_input("입금 계좌 안내", value=cfg["account"], key="cfg_acc_input")
         new_pw = st.text_input("새 관리자 비밀번호 변경 (변경시에만 입력)", type="password", key="cfg_new_pw")
 
         if st.button("기본 설정 저장하기", key="save_cfg_btn"):
-            def _set_cfg(d, m=m, acc=acc, new_pw=new_pw):
+            def _set_cfg(d, m=m, n_s=n_s, acc=acc, new_pw=new_pw):
                 d["config"]["month"] = m
-                d["config"]["n_shops"] = len(d["shops"])
+                d["config"]["n_shops"] = int(n_s)
                 d["config"]["account"] = acc
                 if new_pw.strip() != "":
                     d["config"]["admin_password"] = new_pw
@@ -599,62 +589,7 @@ if page == "admin":
             key="download_summary_csv"
         )
 
-        # ── 정산 마감: 모든 점포가 입력해야 켜짐 ──
-        st.markdown("---")
-        st.markdown(f"### ✅ {cfg['month']} 정산 마감")
-        missing = [r["점포명"] for r in summary_data if r["총 관리비"] == "미입력 또는 계산 전"]
-        nxt = next_month(cfg["month"])
-        msg = st.session_state.pop("close_msg", None)
-        if msg:
-            (st.success if msg[0] == "ok" else st.error)(msg[1])
-        if missing:
-            st.warning(f"아직 입력하지 않은 점포가 {len(missing)}곳 있어요: " + ", ".join(missing))
-        else:
-            st.caption(f"마감하면 CSV 파일이 저장되고, {cfg['month']} 기록을 보관한 뒤 당월 수치를 전월로 옮기고 {nxt}을 시작해요.")
-        agree = st.checkbox(f"{cfg['month']} 정산을 마감합니다 (되돌릴 수 없어요)", key="close_ok", disabled=bool(missing))
-
-        def _close_month(month=cfg["month"], nxt=nxt):
-            def _close(d):
-                if d["config"].get("month") != month:
-                    raise RuntimeError("이미 마감된 달이에요. 새로고침해 주세요.")
-                n_now = len(d["shops"]) or 1
-                rows = {}
-                for s_name, v in d["shops"].items():
-                    ue = round(v["당월전기"] - v["전월전기"], 1)
-                    uw = round(v["당월수도"] - v["전월수도"], 1)
-                    if v["당월전기"] <= 0 or v["당월수도"] <= 0 or ue < 0 or uw < 0:
-                        raise RuntimeError(f"{s_name} 입력이 비어 있거나 전월보다 작아요.")
-                    rows[s_name] = {"전월전기": v["전월전기"], "당월전기": v["당월전기"], "전기사용량": ue,
-                                    "전월수도": v["전월수도"], "당월수도": v["당월수도"], "수도사용량": uw,
-                                    "관리비": round(calc_fee(s_name, ue, uw, n_now)["total"])}
-                d.setdefault("history", {})[month] = {"closed": datetime.now(KST).strftime("%Y-%m-%d %H:%M"),
-                                                      "shops": rows}
-                for v in d["shops"].values():
-                    v["전월전기"], v["전월수도"] = v["당월전기"], v["당월수도"]
-                    v["당월전기"], v["당월수도"] = 0.0, 0.0
-                d["config"]["month"] = nxt
-            try:
-                update_data(_close, f"{month} 정산 마감")
-            except Exception as e:
-                st.session_state.close_msg = ("err", f"마감하지 못했습니다. ({e})")
-            else:
-                for k in list(st.session_state.keys()):
-                    if k.startswith(("adm_pe_", "adm_pw_")) or k in ("cfg_month_input", "close_ok", "elec_val", "water_val"):
-                        del st.session_state[k]
-                st.session_state.close_msg = ("ok", f"{month} 정산을 마감했어요. 이제 {nxt} 입력을 받을 수 있어요.")
-
-        st.download_button(
-            label=f"✅ {cfg['month']} 정산 마감하고 {nxt} 시작 (CSV 저장)",
-            data=csv_data,
-            file_name=f"테크노푸드몰_{cfg['month']}_관리자정산.csv",
-            mime="text/csv",
-            key="close_month_btn",
-            on_click=_close_month,
-            disabled=bool(missing) or not agree,
-            use_container_width=True,
-        )
-
-        st.markdown("---")
+        st.markdown("")
         if st.button("🔄 모든 점포 당월 입력 상태 초기화하기 (미입력으로 되돌리기)", key="reset_inputs_btn"):
             def _reset(d):
                 for s in d["shops"]:
@@ -666,7 +601,7 @@ if page == "admin":
                 st.error(f"초기화하지 못했습니다. ({e})")
             else:
                 for k in list(st.session_state.keys()):
-                    if k.startswith(("c_elec_", "c_water_")) or k in ("elec_val", "water_val"):
+                    if k.startswith("c_elec_") or k.startswith("c_water_"):
                         del st.session_state[k]
                 st.success("모든 점포의 당월 입력값이 초기화되었습니다!")
                 st.rerun()
