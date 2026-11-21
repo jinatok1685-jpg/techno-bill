@@ -17,7 +17,7 @@ st.markdown("""
     .stButton > button {
         width: 100%;
         border-radius: 8px;
-        height: 3em;
+        height: 2.6em;
         font-weight: 600;
         border: 1px solid #d1d5db;
         background-color: #f9fafb;
@@ -28,6 +28,20 @@ st.markdown("""
     [data-testid="stForm"] [data-testid="stHorizontalBlock"] > div { min-width: 0 !important; }
     [data-testid="stForm"] [data-testid="stHorizontalBlock"] > div:last-child { flex: 0 0 32% !important; }
     [data-testid="stFormSubmitButton"] > button { height: 2.6em; font-weight: 600; }
+    header[data-testid="stHeader"] { display: none; }
+    .block-container, [data-testid="stMainBlockContainer"] { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+    .st-key-shoplist, .st-key-menu { gap: 8px !important; }
+    .st-key-shoplist [data-testid="stHorizontalBlock"],
+    .st-key-topbar [data-testid="stHorizontalBlock"],
+    .st-key-menu [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px !important; align-items: center; }
+    .st-key-shoplist [data-testid="stHorizontalBlock"] > div,
+    .st-key-topbar [data-testid="stHorizontalBlock"] > div,
+    .st-key-menu [data-testid="stHorizontalBlock"] > div { min-width: 0 !important; width: auto !important; flex: 1 1 0 !important; }
+    .st-key-topbar [data-testid="stHorizontalBlock"] > div:last-child { flex: 0 0 30% !important; }
+    .st-key-shoplist .stButton > button { height: auto; min-height: 3.3em; padding: 6px 4px; line-height: 1.25; }
+    .st-key-shoplist .stButton p { white-space: normal; word-break: keep-all; }
+    .st-key-menu .stButton > button { height: 2.4em; padding: 0 4px; }
+    .st-key-menu .stButton p { font-size: 0.85em; white-space: nowrap; }
     .stButton > button:hover {
         border-color: #3b82f6;
         color: #3b82f6;
@@ -191,6 +205,32 @@ def delete_photo(path):
         pass
 
 
+def save_file(path, raw, msg):
+    if USE_GH:
+        gh_put(path, raw, None, msg)
+    else:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(raw)
+
+
+def next_month(m):
+    import re
+    g = re.search(r"\d+", m)
+    if not g:
+        return m
+    return m[:g.start()] + str(int(g.group()) % 12 + 1) + m[g.end():]
+
+
+def missing_shops(shops):
+    out = []
+    for s, v in shops.items():
+        ce, cw = v.get("당월전기", 0.0), v.get("당월수도", 0.0)
+        if not (ce > 0 and cw > 0 and ce >= v["전월전기"] and cw >= v["전월수도"]):
+            out.append(s)
+    return out
+
+
 # ───────────── 요금 계산 (한 곳에서만) ─────────────
 def calc_fee(shop_name, use_elec, use_water, n):
     base_elec_share = 750000 / n
@@ -256,17 +296,26 @@ if page == "fee":
         st.session_state.selected_shop = None
 
     if st.session_state.selected_shop is None:
-        # ── 첫 화면: 점포 목록 ──
-        st.subheader(f"{cfg['month']} 관리비 조회")
-        st.markdown("##### 🏪 본인의 점포를 **클릭하여** 선택해주세요")
-        for idx, shop_name in enumerate(shop_list):
-            if st.button(shop_name, key=f"btn_shop_{idx}", use_container_width=True):
-                st.session_state.selected_shop = shop_name
-                st.session_state.step = 1
-                st.session_state.elec_val = float(shops[shop_name]["당월전기"]) or None
-                st.session_state.water_val = float(shops[shop_name]["당월수도"]) or None
-                st.session_state.scroll_top = True
-                st.rerun()
+        # ── 첫 화면: 점포 목록 (2칸씩, 한 화면에) ──
+        st.markdown(f"<div style='font-size:1.4em; font-weight:700; line-height:1.3;'>{cfg['month']} 관리비 조회</div>"
+                    f"<div style='color:#6b7280; margin:2px 0 10px;'>🏪 본인 점포를 눌러주세요</div>",
+                    unsafe_allow_html=True)
+        with st.container(key="shoplist"):
+            for r in range(0, len(shop_list), 2):
+                cols = st.columns(2)
+                for j in range(2):
+                    idx = r + j
+                    if idx >= len(shop_list):
+                        continue
+                    shop_name = shop_list[idx]
+                    with cols[j]:
+                        if st.button(shop_name, key=f"btn_shop_{idx}", use_container_width=True):
+                            st.session_state.selected_shop = shop_name
+                            st.session_state.step = 1
+                            st.session_state.elec_val = float(shops[shop_name]["당월전기"]) or None
+                            st.session_state.water_val = float(shops[shop_name]["당월수도"]) or None
+                            st.session_state.scroll_top = True
+                            st.rerun()
     else:
         # ── 점포 화면: 1 전기 → 2 수도 → 3 결과 ──
         selected_shop = st.session_state.selected_shop
@@ -280,13 +329,31 @@ if page == "fee":
         prev_e = shop_info["전월전기"]
         prev_w = shop_info["전월수도"]
 
+        # ── 맨 위: 점포 이름 + 돌아가기 ──
+        with st.container(key="topbar"):
+            c_name, c_back = st.columns([2, 1])
+            with c_name:
+                st.markdown(f"<div style='padding:6px 10px; background:#eff6ff; border-left:4px solid #3b82f6; "
+                            f"color:#1e40af; font-weight:600; line-height:1.3;'>{selected_shop}</div>",
+                            unsafe_allow_html=True)
+            with c_back:
+                if step == 2:
+                    if st.button("← 전기", key="back_elec", use_container_width=True):
+                        go(1)
+                        st.rerun()
+                else:
+                    if st.button("← 목록", key="back_to_list", use_container_width=True):
+                        st.session_state.selected_shop = None
+                        go(1)
+                        st.rerun()
+
         if step == 1:
-            st.markdown("### ⚡ 전기 계량기")
-            st.info(f"전월 기준 전기 수치: **{prev_e:,.1f} kWh**")
+            st.markdown("#### ⚡ 전기 계량기")
+            st.caption(f"전월 기준 수치: {prev_e:,.1f} kWh")
             with st.form(f"elec_form_{selected_shop}"):
                 c_in, c_btn = st.columns([3, 1])
                 with c_in:
-                    v = st.number_input("당월 전기 계량기 수치 입력", value=st.session_state.get("elec_val"),
+                    v = st.number_input("당월 전기 계량기 수치", value=st.session_state.get("elec_val"),
                                         step=1.0, format="%.1f")
                 with c_btn:
                     ok = st.form_submit_button("↵ 다음", use_container_width=True)
@@ -301,16 +368,16 @@ if page == "fee":
                     st.rerun()
 
         elif step == 2:
-            st.success(f"⚡ 전기: {st.session_state.elec_val:,.1f} kWh (사용량 {st.session_state.elec_val - prev_e:,.1f} kWh)")
-            st.markdown("### 💧 수도 계량기")
-            st.info(f"전월 기준 수도 수치: **{prev_w:,.1f} ton**")
+            st.caption(f"⚡ 전기 {st.session_state.elec_val:,.1f} kWh 입력됨 (사용량 {st.session_state.elec_val - prev_e:,.1f} kWh)")
+            st.markdown("#### 💧 수도 계량기")
+            st.caption(f"전월 기준 수치: {prev_w:,.1f} ton")
             with st.form(f"water_form_{selected_shop}"):
                 c_in, c_btn = st.columns([3, 1])
                 with c_in:
-                    v = st.number_input("당월 수도 계량기 수치 입력", value=st.session_state.get("water_val"),
+                    v = st.number_input("당월 수도 계량기 수치", value=st.session_state.get("water_val"),
                                         step=1.0, format="%.1f")
                 with c_btn:
-                    ok = st.form_submit_button("↵ 결과 보기", use_container_width=True)
+                    ok = st.form_submit_button("↵ 결과", use_container_width=True)
             if ok:
                 if v is None:
                     st.error("수도 계량기 수치를 입력해주세요.")
@@ -339,46 +406,36 @@ if page == "fee":
             use_elec = round(curr_elec - prev_e, 1)
             use_water = round(curr_water - prev_w, 1)
             f = calc_fee(selected_shop, use_elec, use_water, n)
+            jump_text = " (점핑 +50,000원)" if f["is_jump"] else ""
+
+            rows = [
+                ("전기세", f["indiv_elec_fee"]),
+                ("수도세", f["indiv_water_fee"]),
+                (f"엘리베이터{jump_text}", f["elevator_fee"]),
+                ("태동환경", f["taedong_fee"]),
+                ("수선예비비", f["repair_reserve"]),
+                ("대한전기", f["daehan_elec_fee"]),
+            ]
+            rows_html = "".join(
+                f"<div style='display:flex; justify-content:space-between; padding:2px 2px; border-bottom:1px solid #e5e7eb;'>"
+                f"<span>{k}</span><span style='font-weight:600;'>{val:,.0f}원</span></div>" for k, val in rows)
 
             st.markdown(f"""
-            <div style="padding:18px 20px; background:#fff7ed; border:2px solid #fb923c; border-radius:12px; margin-bottom:16px; text-align:center;">
-                <div style="color:#9a3412; font-size:1em; font-weight:600;">{selected_shop} · {cfg['month']} 관리비</div>
-                <div style="color:#dc2626; font-size:2.6em; font-weight:800; line-height:1.3;">{f['total']:,.0f}원</div>
+            <div style="padding:8px 12px; background:#fff7ed; border:2px solid #fb923c; border-radius:12px; margin-bottom:8px; text-align:center;">
+                <div style="color:#9a3412; font-size:0.9em; font-weight:600;">{cfg['month']} 관리비</div>
+                <div style="color:#dc2626; font-size:2em; font-weight:800; line-height:1.25;">{f['total']:,.0f}원</div>
             </div>
+            <div style="font-size:0.9em; color:#374151; line-height:1.6;">
+                📊 사용량: 전기 {use_elec:,.1f} kWh · 수도 {use_water:,.1f} ton<br>
+                🏦 입금계좌: {cfg['account']}
+            </div>
+            <div style="margin-top:6px; font-size:0.95em;">{rows_html}</div>
             """, unsafe_allow_html=True)
-            st.success(f"📊 당월 사용량 - 전기: {use_elec:,.1f} kWh / 수도: {use_water:,.1f} ton")
-            st.info(f"입금계좌: {cfg['account']}")
 
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("### 전기 및 수도 요금")
-                st.write(f"- **전기세**: {f['indiv_elec_fee']:,.0f}원")
-                st.caption(f"  (사용량 {use_elec:,.1f}kWh × 140원 + 공용전기 75,000원 + 기본전기 {f['base_elec_share']:,.0f}원)")
-                st.write(f"- **수도세**: {f['indiv_water_fee']:,.0f}원")
-                st.caption(f"  (사용량 {use_water:,.1f}톤 × 3,000원 + 공용수도 13,000원)")
-            with c2:
-                st.markdown("### 기타 공용 관리비 분담 항목")
-                jump_text = " (점핑 +50,000원 포함)" if f["is_jump"] else ""
-                st.write(f"- 엘리베이터 요금: {f['elevator_fee']:,.0f}원{jump_text}")
-                st.write(f"- 태동환경: {f['taedong_fee']:,.0f}원")
-                st.write(f"- 수선예비비: {f['repair_reserve']:,.0f}원")
-                st.write(f"- 대한전기: {f['daehan_elec_fee']:,.0f}원")
-
-        # ── 아래쪽: 점포 이름 + 돌아가기 ──
-        st.markdown("---")
-        st.markdown(f"<div style='padding:8px 12px; background:#eff6ff; border-left:4px solid #3b82f6; "
-                    f"border-radius:4px; color:#1e40af; font-weight:600;'>🔍 {selected_shop}</div>",
-                    unsafe_allow_html=True)
-        st.markdown("")
-        if step == 2:
-            if st.button("← 전기 다시 입력", key="back_elec"):
-                go(1)
-                st.rerun()
-        else:
-            if st.button("← 점포 목록으로", key="back_to_list"):
-                st.session_state.selected_shop = None
-                go(1)
-                st.rerun()
+            with st.expander("계산식 보기"):
+                st.write(f"- 전기세: 사용량 {use_elec:,.1f}kWh × 140원 + 공용전기 75,000원 + 기본전기 {f['base_elec_share']:,.0f}원")
+                st.write(f"- 수도세: 사용량 {use_water:,.1f}톤 × 3,000원 + 공용수도 13,000원")
+                st.write(f"- 엘리베이터 70,000원 ÷ {n}{jump_text} · 태동환경 370,000원 ÷ {n} · 대한전기 231,000원 ÷ {n} · 수선예비비 10,000원")
 
 if page == "photo":
     st.subheader(f"📷 {db['config']['month']} 계량기 증빙 사진 게시판")
@@ -491,6 +548,9 @@ if page == "admin":
             else:
                 st.error("비밀번호가 올바르지 않습니다.")
     else:
+        flash = st.session_state.pop("admin_flash", None)
+        if flash:
+            st.success(flash)
         if USE_GH:
             st.success("✅ 데이터와 사진이 GitHub 비공개 저장소에 저장되고 있습니다.")
         else:
@@ -589,6 +649,48 @@ if page == "admin":
             key="download_summary_csv"
         )
 
+        st.markdown("---")
+        st.markdown("### 3. 🔒 정산 마감")
+        cur_month = cfg["month"]
+        nxt = next_month(cur_month)
+        missing = missing_shops(shops)
+        if missing:
+            st.error("미입력: " + ", ".join(missing))
+        else:
+            st.success(f"모든 점포가 {cur_month} 수치를 입력했습니다.")
+        confirm = st.checkbox(f"{cur_month} 정산을 마감합니다", key="close_confirm")
+        if st.button(f"✅ {cur_month} 마감하고 {nxt} 시작", key="close_month_btn", use_container_width=True):
+            if missing:
+                st.error("입력하지 않은 점포가 있어 마감할 수 없습니다.")
+            elif not confirm:
+                st.error("위의 마감 확인 칸을 먼저 체크해주세요.")
+            else:
+                def _close(d, month=cur_month, nxt=nxt):
+                    if d["config"]["month"] != month:
+                        raise RuntimeError("이미 마감되었습니다. 새로고침해주세요.")
+                    miss = missing_shops(d["shops"])
+                    if miss:
+                        raise RuntimeError("미입력 점포가 있습니다: " + ", ".join(miss))
+                    for v in d["shops"].values():
+                        v["전월전기"] = v["당월전기"]
+                        v["전월수도"] = v["당월수도"]
+                        v["당월전기"] = 0.0
+                        v["당월수도"] = 0.0
+                    d["config"]["month"] = nxt
+                try:
+                    with st.spinner("마감 중..."):
+                        save_file(f"archive/{datetime.now():%Y%m%d_%H%M%S}_{cur_month}_정산.csv",
+                                  csv_data, f"{cur_month} 정산 보관")
+                        update_data(_close, f"{cur_month} 정산 마감")
+                except Exception as e:
+                    st.error(f"마감하지 못했습니다. ({e})")
+                else:
+                    for k in list(st.session_state.keys()):
+                        if k.startswith("adm_pe_") or k.startswith("adm_pw_") or k == "close_confirm":
+                            del st.session_state[k]
+                    st.session_state.admin_flash = f"{cur_month} 정산을 마감했습니다. 이제 {nxt} 입력을 받습니다."
+                    st.rerun()
+
         st.markdown("")
         if st.button("🔄 모든 점포 당월 입력 상태 초기화하기 (미입력으로 되돌리기)", key="reset_inputs_btn"):
             def _reset(d):
@@ -608,13 +710,16 @@ if page == "admin":
 
 
 # ───────────── 아래쪽 메뉴 ─────────────
-st.markdown("---")
+st.markdown("<hr style='margin:10px 0 8px;'>", unsafe_allow_html=True)
 MENU = [("fee", "관리비 조회"), ("photo", "📷 사진 게시판"), ("admin", "관리자 설정")]
-for col, (k, label) in zip(st.columns(len(MENU)), MENU):
-    with col:
-        if st.button(f"👉 {label}" if page == k else label, key=f"menu_{k}", use_container_width=True):
-            st.session_state.page = k
-            st.session_state.scroll_top = True
-            st.rerun()
+with st.container(key="menu"):
+    for col, (k, label) in zip(st.columns(len(MENU)), MENU):
+        with col:
+            if st.button(f"👉 {label}" if page == k else label, key=f"menu_{k}", use_container_width=True):
+                st.session_state.page = k
+                if k == "fee":
+                    st.session_state.selected_shop = None
+                st.session_state.scroll_top = True
+                st.rerun()
 st.markdown("<div style='text-align:center; color:#9ca3af; font-size:0.9em; margin-top:6px;'>테크노푸드몰</div>",
             unsafe_allow_html=True)
